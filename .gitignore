@@ -1,0 +1,28 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.idea
+
+# Virtual environments
+.venv
+
+# emacs dribbles
+*~
+
+# downloaded
+*.zip
+
+# generated
+*.db
+
+# tmp
+q
+.python-version
+Takeout
+*.backup
+*.log
+*.wal

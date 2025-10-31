@@ -1,0 +1,95 @@
+<!-- -*- mode: jinja2; -*- --!>
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Search for Images</title>
+
+    <!-- jquery gunk -->
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+    <script src="https://code.jquery.com/jquery-1.12.4.js"></script>
+    <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+    <script>
+      $(function() {
+	  $("#location").autocomplete({
+              source: function(request, response) {
+		  $.ajax({
+                      url: "/location_complete",
+                      dataType: "json",
+                      data: {
+			  term: request.term
+                      },
+                      success: function(data) {
+			  response(data);
+                      },
+                      error: function() {
+			  console.log("Error fetching autocomplete data.");
+                      }
+		  });
+              },
+              minLength: 2
+	  });
+      });
+    </script>
+  </head>
+  <body>
+    <p>Search:</p>
+    <form action="{{ url_for('search') }}" method="post">
+      <label for="location">Location</label>
+      <input name="location" id="location" value="{{data.get('location', '')}}">
+      <div id="suggestions"></div>
+      <label for="distance">Distance</label>
+      <input name="distance" id="distance" value="{{data.get('distance', '10')}}">
+      km
+      <br/>
+      <label for="before">Before:</label>
+      <select name="before" id="before">
+	<option value=""/>
+	{% for year in years %}
+	  <option value="{{ year }}" {% if year == data.get('before', '') %} selected {% endif %}>
+	    {{year}}
+	  </option>
+	{% endfor %}
+      </select>
+      <br/>
+      <label for="words">Key Words</label>
+      <input name="words" id="words" value="{{data.get('words', '')}}">
+      <table>
+	<tr>
+	  {% for id, checked in faces.items() %}
+	    <td >
+	      <label style="display: flex;">
+		<input type="checkbox" id="faces" name="faces" value="{{ id }}" {% if checked %} checked {% endif %}/>
+		<img src="{{ url_for('face', id=id) }}">
+	      </label> 
+	    </td>
+	    {% if loop.index is divisibleby 8 %}
+	</tr><tr>
+	    {% endif %}
+      {% endfor %}
+	</tr>
+      </table>
+      <br/>
+      <button type="submit">Submit</button>
+    </form>
+    <p>Results</p>
+    <ul>
+      {% for year, hashes in results.years %}
+      <li>{{ year }}</li>
+        {% for hash in hashes %}
+         <a href="{{ url_for('image', hash=hash) }}"><img src="{{ url_for('thumb',hash=hash) }}"></a>
+        {% endfor %}
+      {% endfor %}
+	 
+      {% if results.more %}
+	<p>there are more results<p/>
+	<p/>
+	<p/>
+      {% endif %}
+	
+      {% if not results.years %}
+      <p>Nothing matches.</p>
+      {% endif %}
+    </ul>
+  </body>
+</html>
+
