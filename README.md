@@ -8,13 +8,12 @@ locally?
 Here's how:
 
 * Perform a data takeout, selecting just Google Photos
-
- * Browse to https://takeout.google.com/
- * Select "Deselect All" so none of the Products are selected
- * Select the Google Photos for export
- * Select "Next step"
- * Select file type (.zip, the default) and destination and size (see below)
- * Select "Create export"
+	 - Browse to https://takeout.google.com/
+	 - Select "Deselect All" so none of the Products are selected
+	 - Select the Google Photos for export
+	 - Select "Next step"
+	 - Select file type (.zip, the default) and destination and size (see below)
+	 - Select "Create export"
 
 Wait.  This can take **days.**
 
