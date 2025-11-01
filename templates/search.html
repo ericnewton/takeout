@@ -53,7 +53,9 @@
       <br/>
       <label for="words">Key Words</label>
       <input name="words" id="words" value="{{data.get('words', '')}}">
-      <table>
+      <br/>
+      <button type="button" onclick="show_hide()">Faces</button>
+      <table id="face_table" style="display: none;">
 	<tr>
 	  {% for id, checked in faces.items() %}
 	    <td >
@@ -90,6 +92,16 @@
       <p>Nothing matches.</p>
       {% endif %}
     </ul>
+    <script>
+function show_hide() {
+  var x = document.getElementById("face_table");
+  if (x.style.display === "none") {
+    x.style.display = "block";
+  } else {
+    x.style.display = "none";
+  }
+}
+   </script>
   </body>
 </html>
 
