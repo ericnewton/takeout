@@ -3,7 +3,7 @@ from .fix_logging import fix_logging
 from .io import TakeoutFile, listing
 from .config import Config
 from .types import TakeoutDirectoryType, DatabaseFileType
-from .db import fetch_many, count
+from .db import fetch_many, count, BatchInserter
 
 import concurrent.futures as cf
 import duckdb
@@ -14,7 +14,6 @@ import logging
 import moviepy
 import numpy as np
 import os
-import pandas as pd
 import re
 import time
 
@@ -24,7 +23,6 @@ from datetime import datetime
 from itertools import repeat
 from typing import (
     Optional,
-    Any,
     Tuple,
     Iterable,
     TypedDict,
@@ -44,7 +42,7 @@ YYYYMMDD = YYYY + MM + DD
 YYYYMMDD_RE = re.compile(YYYYMMDD)
 HHMMSS = r"([0-2][0-9])([0-6][0-9])([0-6][0-9])"
 YYYYMMDD_HHMMSS_RE = re.compile(f"{YYYYMMDD}_{HHMMSS}")
-YYYY_MM_DD_RE = re.compile(f"{YYYY}-{MM}-{DD}")
+YYYY_MM_DD_RE = re.compile(f"{YYYY}[-/]{MM}[-/]{DD}")
 ISOLATED_YEAR_RE = re.compile(r"[^0-9]" + YYYY + "[^0-9]")
 
 START_OF_TIME = datetime(1990, 1, 1, 0, 0, 0)
@@ -213,14 +211,14 @@ def scan_faces(tf: TakeoutFile, all_faces: list[FaceEncoding]) -> FacesRecord:
             )
             return result
 
+        # for each location, find the face in the known list of faces
         for location, encoding in zip(locations, encodings):
             if is_small(location):
                 continue
             matches = face_recognition.compare_faces(
                 [f.encoding for f in all_faces], encoding
             )
-            for j, match in enumerate(matches):
-                face = all_faces[j]
+            for face, match in zip(all_faces, matches):
                 if match:
                     logger.info("Found a match on the %dth face", face.id)
                     result.add_face_match(face)
@@ -275,7 +273,6 @@ def process_image_file(
 
     record.update(thumbnail=thumbnail)
     record.update(faces=scan_faces(tf, all_faces))
-
     return record
 
 
@@ -288,29 +285,32 @@ def process_video_file(filename: str, archive: str) -> ImageRecord:
     digest, size = tf.hash_and_size()
     record.update(hash=digest, size=size)
 
-    with tf.asfile() as simple_file:
-        with moviepy.VideoFileClip(simple_file.filename()) as vc:
-            width, height = vc.size
-            record.update(width=width, height=height)
+    try:
+        with tf.asfile() as simple_file:
+            with moviepy.VideoFileClip(simple_file.filename()) as vc:
+                width, height = vc.size
+                record.update(width=width, height=height)
 
-            # generate a gif from the first few seconds of the video
+                # generate a gif from the first few seconds of the video
 
-            # I struggled with moviepy type-annotations
-            # pyrefly: ignore  # not-callable, bad-assignment, missing-argument
-            vc = vc.without_audio()
-            # pyrefly: ignore  # not-callable, bad-assignment
-            vc = vc.with_end(5)
-            vc = vc.with_effects([moviepy.vfx.Resize(width=128)])
-            filename1 = simple_file.filename()
-            stem, _ = os.path.splitext(filename1)
-            gif = stem + ".gif"
-            vc.write_gif(gif, fps=1, loop=0, logger=None)  # loop=0 means loop forever
-            try:
-                with open(gif, "rb") as fp:
-                    record.update(thumbnail=fp.read())
-            finally:
-                os.remove(gif)
-            return record
+                # I struggled with moviepy type-annotations
+                # pyrefly: ignore  # not-callable, bad-assignment, missing-argument
+                vc = vc.without_audio()
+                # pyrefly: ignore  # not-callable, bad-assignment
+                vc = vc.with_end(5)
+                vc = vc.with_effects([moviepy.vfx.Resize(width=128)])
+                filename1 = simple_file.filename()
+                stem, _ = os.path.splitext(filename1)
+                gif = stem + ".gif"
+                vc.write_gif(gif, fps=1, loop=0, logger=None)  # loop=0 means loop forever
+                try:
+                    with open(gif, "rb") as fp:
+                        record.update(thumbnail=fp.read())
+                finally:
+                    os.remove(gif)
+                return record
+    except Exception as e:
+        logger.exception(f"Error processing video file {tf}: {e}")
 
 
 def commas(seq: Iterable[str]):
@@ -371,37 +371,6 @@ def fetch_known_faces(db: duckdb.DuckDBPyConnection) -> list[FaceEncoding]:
     return result
 
 
-class BatchInserter:
-    def __init__(self, config: Config, table: str, columns: list[str], max: int = 100):
-        self.config = config
-        self.table = table
-        self.columns = columns
-        self.data: dict[str, list[Any]] = {c: [] for c in self.columns}
-        self.count = 0
-        self.max = max
-
-    def flush(self) -> None:
-        if self.data:
-            col_str = ", ".join(self.columns)
-            df = pd.DataFrame(self.data)  # noqa: F841
-            with self.config.cursor() as cur:
-                stmt = f"""
-                      INSERT OR IGNORE
-                        INTO {self.table} ({col_str})
-                      SELECT * from df
-                    """
-                cur.execute(stmt)
-            self.data = {c: [] for c in self.columns}
-            self.count = 0
-
-    def add_row(self, *cols) -> None:
-        for name, value in zip(self.columns, cols):
-            self.data[name].append(value)
-            self.count += 1
-        if self.count > self.max:
-            self.flush()
-
-
 def add_file(
     images: BatchInserter, metadata: BatchInserter, path: str, archive: str
 ) -> None:
@@ -441,39 +410,38 @@ def scan_files(config: Config) -> None:
     start = config.takeout_directory
     logger.info("Scanning files in %s", start)
 
-    images = BatchInserter(config, "images", ["path", "archive"])
-    metadata = BatchInserter(
-        config, "metafiles", ["image_path", "meta_path", "archive"]
-    )
-
-    # walk the tree and find all images/video
-    for dirpath, dir_names, filenames in os.walk(start):
-        
-        # skip the Failed Videos directory
-        dir_names[:] = [d for d in dir_names if d != "Failed Videos"]
-        for filename in filenames:
-            path = os.path.join(dirpath, filename)
-
-            if filename.endswith(".zip"):
-                archive = path
-                for path in listing(archive):
-                    add_file(images, metadata, path, archive)
-            else:
-                add_file(images, metadata, path, "")
-
-    images.flush()
-    metadata.flush()
-
     with config.cursor() as db:
-        total = count(db, "SELECT count(*) FROM images")
-        unprocessed = count(db, "SELECT count(*) FROM images WHERE hash IS NULL")
-        incomplete = total - unprocessed
-        logger.info(
-            "There are %d known files, %d unprocessed (%1.f%%)",
-            total,
-            unprocessed,
-            incomplete * 100.0 / total if total > 0 else 0.,
-        )
+        images = BatchInserter(db, "images", ["path", "archive"])
+        metadata = BatchInserter(db, "metafiles", ["image_path", "meta_path", "archive"])
+
+        # walk the tree and find all images/video
+        for dirpath, dir_names, filenames in os.walk(start):
+
+            # skip the Failed Videos directory
+            dir_names[:] = [d for d in dir_names if d != "Failed Videos"]
+            for filename in filenames:
+                path = os.path.join(dirpath, filename)
+
+                if filename.endswith(".zip"):
+                    archive = path
+                    for path in listing(archive):
+                        add_file(images, metadata, path, archive)
+                else:
+                    add_file(images, metadata, path, "")
+
+        images.flush()
+        metadata.flush()
+
+        with config.cursor() as db:
+            total = count(db, "SELECT count(*) FROM images")
+            unprocessed = count(db, "SELECT count(*) FROM images WHERE hash IS NULL")
+            processed = total - unprocessed
+            logger.info(
+                "There are %d known files, %d unprocessed (%1.f%% complete)",
+                total,
+                unprocessed,
+                processed * 100.0 / total if total > 0 else 0.,
+            )
 
 
 def process_file(file_reference: Tuple[str, str], all_faces) -> Optional[ImageRecord]:

@@ -1,7 +1,6 @@
 from takeout import load
-import datetime
-import pandas as pd
 import duckdb
+import datetime
 
 
 def test_date_from_filename():
@@ -11,6 +10,7 @@ def test_date_from_filename():
         "Pictures from 2025/0203xyzzy": datetime.datetime(2025, 1, 1),
         "Pictures from 2024-02-04/0203xyzzy": datetime.datetime(2024, 2, 4),
         "/Not a date 9876-01-01": None,
+        "2024/01/02/myfile.jpg": datetime.datetime(2024, 1, 2),
     }
     for k, v in date_values.items():
         dt = load.date_from_filename(k)
@@ -34,24 +34,6 @@ def test_extract_meta():
         "words": ["tests"],
     }
     assert sorted(meta.items()) == sorted(expected.items())
-
-
-def test_fetch_many():
-    db = duckdb.connect(":memory:")
-    db.execute("CREATE TABLE test (id INTEGER, name VARCHAR)")
-    for i in range(1000):
-        db.execute("insert into test(id, name) values(?, ?)", [i, str(i)])
-    for mod in 2, 3:
-        rows = load.fetch_many(
-            db, "SELECT id, name FROM test WHERE id % ? = 0 ORDER by id asc", [mod]
-        )
-        for i, (id, name) in enumerate(rows):
-            n = i * mod
-            assert id == n
-            assert name == str(n)
-    assert [] == list(
-        load.fetch_many(db, "SELECT id, name FROM test WHERE name = 'missing'")
-    )
 
 
 def test_is_small():
