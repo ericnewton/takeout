@@ -21,6 +21,10 @@ def test_words_of_filename():
     words = load.words_of_filename("/foo/bar/trip to Tutankhamun tomb/img.jpg")
     assert set(words) == {"tutankhamun", "tomb"}
 
+    words = load.words_of_filename("/Decemberween-1999/trip to Tutankhamun tomb/trip to egypt.jpg")
+    assert set(words) == {"tutankhamun", "tomb", "egypt"}
+    
+
 
 def test_extract_meta():
     image = "tests/2025-02-04 some.jpg"
@@ -31,7 +35,7 @@ def test_extract_meta():
         "taken": datetime.datetime(2014, 10, 19, 9, 42, 39),
         "lat": 1.0,
         "lon": 2.0,
-        "words": ["tests"],
+        "words": ['02', '04', '2025', 'some'],
     }
     assert sorted(meta.items()) == sorted(expected.items())
 

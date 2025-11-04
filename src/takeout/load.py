@@ -59,6 +59,14 @@ STOP_WORDS = {
     "from",
     "photos",
     "photo",
+    'image',
+    'jpg',
+    'the',
+    'family',
+    'before',
+    '2000',
+    'over',
+    'with',
 }
 
 
@@ -133,17 +141,18 @@ def date_from_filename(filename: str) -> Optional[datetime]:
 
 def words_of_filename(filename: str) -> Optional[list[str]]:
     """extract anything interesting from the album name"""
-    # name of directory containing the file
-    parent, file = os.path.split(filename)
-    base, parent = os.path.split(parent)
     # ignore if there are no spaces in the filename
-    if parent.find(" "):
-        parent = parent.lower()
+    if filename.find(" "):
+        filename = filename.lower()
+        space_parts = [part for part in filename.split("/") if part.find(' ') >= 0]
         # remove punctuation
-        for c in "()-":
-            parent = parent.replace(c, " ")
-        parts = set(parent.split()) - STOP_WORDS
-        return list(parts)
+        parts = set()
+        for part in space_parts:
+            for c in "()-.":
+                part = part.replace(c, " ")
+            parts.update(part.split())
+        parts -= STOP_WORDS
+        return sorted(list(parts))
     return None
 
 
