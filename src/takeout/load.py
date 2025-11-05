@@ -47,16 +47,20 @@ ISOLATED_YEAR_RE = re.compile(r"[^0-9]" + YYYY + "[^0-9]")
 
 START_OF_TIME = datetime(1990, 1, 1, 0, 0, 0)
 IMAGE_SIZE_TOO_SMALL = 150
+ITHUMBNAIL = (200, 200)
+VTHUMBNAIL = 200
 
 STOP_WORDS = {
-    "1",
     "to",
+    "in",
+    "of",
     "goes",
     "trip",
     "favorites",
     "for",
     "untitled",
     "from",
+    "folder",
     "photos",
     "photo",
     'image',
@@ -65,8 +69,11 @@ STOP_WORDS = {
     'family',
     'before',
     '2000',
-    'over',
+    'over'
     'with',
+    'google',
+    'video',
+    'videos',
 }
 
 
@@ -108,6 +115,12 @@ class ImageRecord(TypedDict, total=False):
     words: list[str]
     faces: FacesRecord
 
+class ScanParameters:
+    "Configuration passed during scanning"
+    def __init__(self):
+        self.scan_faces : bool = True
+        self.all_faces : list[FaceEncoding] = []
+
 
 def date_from_filename(filename: str) -> Optional[datetime]:
     """Look for reasonable patterns in filenames and treat them as a datetime"""
@@ -115,24 +128,28 @@ def date_from_filename(filename: str) -> Optional[datetime]:
         m = pattern.search(filename)
         if m:
             result: Optional[datetime] = None
-            if len(m.groups()) == 6:
-                yyyy = int(m.group(1))
-                mm = int(m.group(2))
-                dd = int(m.group(3))
-                hh = int(m.group(4))
-                mn = int(m.group(5))
-                ss = int(m.group(6))
-                result = datetime(yyyy, mm, dd, hh, mn, ss)
-            elif len(m.groups()) == 3:
-                yyyy = int(m.group(1))
-                mm = int(m.group(2))
-                dd = int(m.group(3))
-                result = datetime(yyyy, mm, dd, 0, 0, 0)
-            elif len(m.groups()) == 1:
-                yyyy = int(m.group(1))
-                mm = 1
-                dd = 1
-                result = datetime(yyyy, mm, dd, 0, 0, 0)
+            try:
+                if len(m.groups()) == 6:
+                    yyyy = int(m.group(1))
+                    mm = int(m.group(2))
+                    dd = int(m.group(3))
+                    hh = int(m.group(4))
+                    mn = int(m.group(5))
+                    ss = int(m.group(6))
+                    result = datetime(yyyy, mm, dd, hh, mn, ss)
+                elif len(m.groups()) == 3:
+                    yyyy = int(m.group(1))
+                    mm = int(m.group(2))
+                    dd = int(m.group(3))
+                    result = datetime(yyyy, mm, dd, 0, 0, 0)
+                elif len(m.groups()) == 1:
+                    yyyy = int(m.group(1))
+                    mm = 1
+                    dd = 1
+                    result = datetime(yyyy, mm, dd, 0, 0, 0)
+            except ValueError as e:
+                logger.debug(f"Skipping bad datetime processing with {filename}: {e}")
+
             if result and datetime.now() > result > START_OF_TIME:
                 return result
 
@@ -148,9 +165,9 @@ def words_of_filename(filename: str) -> Optional[list[str]]:
         # remove punctuation
         parts = set()
         for part in space_parts:
-            for c in "()-.":
+            for c in "()-.,'":
                 part = part.replace(c, " ")
-            parts.update(part.split())
+            parts.update([w for w in part.split() if len(w) > 1])
         parts -= STOP_WORDS
         return sorted(list(parts))
     return None
@@ -177,16 +194,11 @@ def process_metadata(metadata_args=Tuple[str, str, str]) -> ImageRecord:
                 lon = None
     except FileNotFoundError:
         logger.debug("Could not find metadata file %s", tf)
-    if taken is None:
-        taken = date_from_filename(image_path)
-    words = words_of_filename(image_path)
     result = ImageRecord(path=image_path)
     if taken:
         result.update(taken=taken)
     if lat is not None and lon is not None:
         result.update(lat=lat, lon=lon)
-    if words:
-        result.setdefault("words", []).extend(words)
     return result
 
 
@@ -238,7 +250,7 @@ def scan_faces(tf: TakeoutFile, all_faces: list[FaceEncoding]) -> FacesRecord:
                 pil_image = Image.fromarray(image[top:bottom, left:right])
                 try:
                     with io.BytesIO() as buf:
-                        pil_image.thumbnail(size=(120, 120))
+                        pil_image.thumbnail(size=ITHUMBNAIL)
                         pil_image = pil_image.convert("RGB")  # remove any transparency
                         pil_image.save(buf, format="jpeg")
                         buf.seek(io.SEEK_SET, 0)
@@ -252,7 +264,7 @@ def scan_faces(tf: TakeoutFile, all_faces: list[FaceEncoding]) -> FacesRecord:
 
 
 def process_image_file(
-    filename: str, archive: str, all_faces: list[FaceEncoding]
+    filename: str, archive: str, scan_parameters: ScanParameters
 ) -> ImageRecord:
     logger.info("Processing image file %s", filename)
 
@@ -281,7 +293,14 @@ def process_image_file(
             return record
 
     record.update(thumbnail=thumbnail)
-    record.update(faces=scan_faces(tf, all_faces))
+    if scan_parameters.scan_faces:
+        record.update(faces=scan_faces(tf, scan_parameters.all_faces))
+    taken = date_from_filename(filename) or date_from_filename(archive)
+    if taken:
+        record.update(taken=taken)
+    words = words_of_filename(filename)
+    if words:
+        record.update(words=words)
     return record
 
 
@@ -293,6 +312,13 @@ def process_video_file(filename: str, archive: str) -> ImageRecord:
 
     digest, size = tf.hash_and_size()
     record.update(hash=digest, size=size)
+
+    taken = date_from_filename(filename)
+    if taken:
+        record.update(taken=taken)
+    words = words_of_filename(filename)
+    if words:
+        record.update(words=words)
 
     try:
         with tf.asfile() as simple_file:
@@ -307,7 +333,7 @@ def process_video_file(filename: str, archive: str) -> ImageRecord:
                 vc = vc.without_audio()
                 # pyrefly: ignore  # not-callable, bad-assignment
                 vc = vc.with_end(5)
-                vc = vc.with_effects([moviepy.vfx.Resize(width=128)])
+                vc = vc.with_effects([moviepy.vfx.Resize(width=VTHUMBNAIL)])
                 filename1 = simple_file.filename()
                 stem, _ = os.path.splitext(filename1)
                 gif = stem + ".gif"
@@ -327,7 +353,7 @@ def commas(seq: Iterable[str]):
 
 
 def process_results(
-    config: Config, all_faces: list[FaceEncoding], record: Optional[ImageRecord]
+    config: Config, scan_parameters: ScanParameters, record: Optional[ImageRecord]
 ) -> None:
     if record is None:
         return None
@@ -342,10 +368,13 @@ def process_results(
                INSERT INTO images({commas(column_names)})
                VALUES ({binding_string})
             """
-            insert += "ON CONFLICT DO UPDATE SET "
-            insert += commas(
-                [f"{c} = EXCLUDED.{c}" for c in record.keys() - {"path", "faces"}]
-            )
+            if len(column_names) > 1:
+                insert += "ON CONFLICT DO UPDATE SET "
+                insert += commas(
+                    [f"{c} = EXCLUDED.{c}" for c in record.keys() - {"path", "faces"}]
+                )
+            else:
+                insert += "ON CONFLICT DO NOTHING"
             cur.execute(insert, binding)
         except Exception as e:
             logger.exception("Unable to insert records: %s", e)
@@ -360,11 +389,11 @@ def process_results(
                     """,
                     [path, face.id],
                 )
-            next_id = max([f.id for f in all_faces], default=-1) + 1
+            next_id = max([f.id for f in scan_parameters.all_faces], default=-1) + 1
             for encoding, thumbnail in record["faces"].new_faces:
                 enc = FaceEncoding(next_id, encoding)
                 next_id = next_id + 1
-                all_faces.append(enc)
+                scan_parameters.all_faces.append(enc)
                 cur.execute(
                     """
                     INSERT INTO faces(id, encoding, image) VALUES(?, ?, ?)
@@ -424,7 +453,7 @@ def scan_files(config: Config) -> None:
         metadata = BatchInserter(db, "metafiles", ["image_path", "meta_path", "archive"])
 
         # walk the tree and find all images/video
-        for dirpath, dir_names, filenames in os.walk(start):
+        for dirpath, dir_names, filenames in os.walk(start, followlinks=True):
 
             # skip the Failed Videos directory
             dir_names[:] = [d for d in dir_names if d != "Failed Videos"]
@@ -453,7 +482,7 @@ def scan_files(config: Config) -> None:
             )
 
 
-def process_file(file_reference: Tuple[str, str], all_faces) -> Optional[ImageRecord]:
+def process_file(file_reference: Tuple[str, str], scan_parameters: ScanParameters) -> Optional[ImageRecord]:
     path, archive = file_reference
     tf = TakeoutFile(path, archive)
     mimetype = tf.mimetype()
@@ -468,7 +497,7 @@ def process_file(file_reference: Tuple[str, str], all_faces) -> Optional[ImageRe
         return process_video_file(path, archive)
 
     elif mimetype == "image":
-        return process_image_file(path, archive, all_faces)
+        return process_image_file(path, archive, scan_parameters)
 
     else:
         logger.error("Unknown mimetype %s for %s", mimetype, path)
@@ -479,17 +508,24 @@ def process_file(file_reference: Tuple[str, str], all_faces) -> Optional[ImageRe
 def load_files(config: Config) -> None:
     with config.cursor() as db:
         # all_faces will be updated as we process images
-        all_faces = fetch_known_faces(db)
+        scan_parameters = ScanParameters()
+        scan_parameters.scan_faces = config.scan_faces
+        if config.scan_faces:
+            scan_parameters.all_faces = fetch_known_faces(db)
+        
 
         # We can't process database updates in the process pool
         # because the database connection cannot be shared in worker
         # processes. So prepare an ImageRecord in parallel to be added
         # in the main thread.
 
-        with cf.ProcessPoolExecutor() as executor:
-            logger.info("Loading image thumbnails, finding faces")
+        with cf.ProcessPoolExecutor(max_workers=config.concurrency) as executor:
+            msg = "Loading image thumbnails"
+            if config.scan_faces:
+                msg += ", finding faces"
+            logger.info("%s", msg)
 
-            # call process_file( (path, archive), all_faces ) for each entry without a hash
+            # call process_file( (path, archive), parameters ) for each entry without a hash
             path_archive = fetch_many(
                 # unprocessed files will have a null hash
                 db,
@@ -498,10 +534,10 @@ def load_files(config: Config) -> None:
             for ir in executor.map(
                 process_file,
                 path_archive,
-                repeat(all_faces),
+                repeat(scan_parameters),
                 buffersize=config.concurrency,
             ):
-                process_results(config, all_faces, ir)
+                process_results(config, scan_parameters, ir)
 
             # extract metadata from the metadata files
             logger.info("Loading metadata")
@@ -511,13 +547,13 @@ def load_files(config: Config) -> None:
                    SELECT m.image_path, m.meta_path, m.archive
                      FROM metafiles m, images i
                     WHERE i.path = m.image_path
-                      AND i.taken is null
+                      AND i.lat is null
                     """,
             )
             for ir in executor.map(
                 process_metadata, metadata, buffersize=config.concurrency
             ):
-                process_results(config, all_faces, ir)
+                process_results(config, scan_parameters, ir)
 
 
 def create_tables(config: Config):
@@ -570,11 +606,12 @@ def start(
     takeout_directory: TakeoutDirectoryType,
     database: DatabaseFileType = Path("images.db"),
     concurrency: int = 0,
+    skip_faces: bool = False
 ) -> None:
     # add support for HEIF image types
     register_heif_opener()
 
-    config = Config(takeout_directory, database, concurrency)
+    config = Config(takeout_directory, database, concurrency, not skip_faces)
 
     now = time.time()
     create_tables(config)

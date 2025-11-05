@@ -10,10 +10,12 @@ class Config:
         takeout_directory: Path = Path("."),
         database: Path = Path("images.db"),
         concurrency: int = 0,
+        scan_faces: bool = True
     ):
         self.db: Optional[duckdb.DuckDBPyConnection] = None
         self.takeout_directory = takeout_directory
         self.database = database
+        self.scan_faces = scan_faces
         if concurrency:
             self.concurrency = concurrency
         else:

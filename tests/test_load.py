@@ -1,4 +1,4 @@
-from takeout import load
+from takeout import load, config, db
 import duckdb
 import datetime
 
@@ -35,7 +35,6 @@ def test_extract_meta():
         "taken": datetime.datetime(2014, 10, 19, 9, 42, 39),
         "lat": 1.0,
         "lon": 2.0,
-        "words": ['02', '04', '2025', 'some'],
     }
     assert sorted(meta.items()) == sorted(expected.items())
 
@@ -47,3 +46,28 @@ def test_is_small():
     assert is_small(1, 1, 1, 1)
     assert is_small(1, 1, 1000, 10)
     assert not is_small(1, 1, 1000, 500)
+
+def test_process_results():
+    c = duckdb.connect(':memory:')
+    
+    class TestConfig(config.Config):
+        def cursor(self):
+            return c.cursor()
+    test_config = TestConfig()
+
+    load.create_tables(test_config)
+
+    ir = load.ImageRecord(path='/a/path/to/image.jpg')
+    load.process_results(test_config, [], ir)
+
+    assert 1 == db.count(c, 'SELECT COUNT(*) FROM images')
+
+    ir.update(words=["a", "b", "C"])
+    load.process_results(test_config, [], ir)
+    assert 1 == db.count(c, 'SELECT COUNT(*) FROM images')
+
+    words, = c.execute("SELECT words from images where path = ?", [ir['path']]).fetchone()
+    assert words == ir["words"]
+    
+    
+    

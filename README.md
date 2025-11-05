@@ -116,3 +116,4 @@ uploaded to Photos.  I need to add:
 * Display image metadata, location information with the image
 * Support quick next/prev image from query
 * Support "next page" at the end of a query
+* Strip large border around scanned images
