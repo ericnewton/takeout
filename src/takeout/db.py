@@ -24,7 +24,7 @@ def fetch_many(
                 yield row
 
 class BatchInserter:
-    def __init__(self, db: duckdb.DuckDBPyConnection, table: str, columns: list[str], max: int = 100):
+    def __init__(self, db: duckdb.DuckDBPyConnection, table: str, columns: list[str], max: int = 10):
         self.db = db
         self.table = table
         self.columns = columns
@@ -45,11 +45,17 @@ class BatchInserter:
             self.data = {c: [] for c in self.columns}
             self.count = 0
 
-    def add_row(self, *cols) -> None:
-        for name, value in zip(self.columns, cols):
-            self.data[name].append(value)
+    def row_added(self):
         self.count += 1
         if self.count > self.max:
             self.flush()
+        
+    def add_row(self, *cols) -> None:
+        for name, value in zip(self.columns, cols):
+            self.data[name].append(value)
+        self.row_added()
 
-
+    def add_dict(self, d: dict[str, Any]) -> None:
+        for name in self.columns:
+            self.data[name].append(d.get(name, None))
+        self.row_added()

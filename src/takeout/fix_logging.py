@@ -1,10 +1,9 @@
 import logging
 import warnings
+from pathlib import Path
+from typing import Optional
 
-# importing this module does all the work
-
-log_format = "%(asctime)s %(levelname)-8s: %(message)s"
-logging.basicConfig(format=log_format, level=logging.INFO)
+# silence warnings
 logging.captureWarnings(True)
 warnings.filterwarnings(
     "ignore", category=UserWarning, module="face_recognition_models"
@@ -12,6 +11,17 @@ warnings.filterwarnings(
 warnings.filterwarnings("ignore", category=UserWarning, module="pkg_resources")
 warnings.filterwarnings("ignore", category=UserWarning, module="moviepy")
 
-def fix_logging():
+logging_fixed: bool = False
+
+def fix_logging(log: Optional[Path] = None):
     "a no-op so we don't get warnings about an unused import when importing this module"
-    pass
+    global logging_fixed
+    if logging_fixed:
+        return
+    log_format = "%(asctime)s %(levelname)s: %(message)s"
+    if log:
+        logging.basicConfig(format=log_format, level=logging.INFO, filename=log, filemode="a")
+    else:
+        logging.basicConfig(format=log_format, level=logging.INFO)
+    logging_fixed = True
+
