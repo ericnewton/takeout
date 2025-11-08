@@ -1,0 +1,41 @@
+<!-- -*- mode: jinja2; -*- --!>
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Image Viewer</title>
+  </head>
+  <body>
+    <a href="{{ url_for('image', hash=data["hash"])}}"><img src="{{ url_for('thumb', hash=data["hash"]) }}"/></a>
+    <table>
+      <tr><td>Path</td><td><tt>{{data["path"]}}</tt></td></tr>
+      {% if data["archive"] %}
+      <tr><td>Archive</td><td><tt>{{data["archive"]}}</tt></td></tr>
+      {% endif %}
+      <tr><td>Size</td><td>{{data["size"]}} bytes</td></tr>
+      <tr><td>Width x Height</th><td>{{data["width"]}} x {{data["height"]}}</td></tr>
+      <tr><td>Taken</td><td>{{data["taken"]}}</td></tr>
+      <tr><td>Size</td><td>{{data["size"]}} bytes</td></tr>
+      <tr><td>Width x Height</th><td>{{data["width"]}} x {{data["height"]}}</td></tr>
+      {% if data["words"] %}
+      <tr><td>Keywords</td><td>{{", ".join(data["words"])}}</td></tr>
+      {% endif %}
+      {% if data["location"] %}
+      <tr><td>Near</td><td>{{data["location"]}}</td></tr>
+      {% endif %}
+    </table>
+    {% if data["faces"] %}
+	 <p>Faces:
+	  <table id="face_table">
+	    <tr>
+	      {% for id in data["faces"] %}
+		<td ><img src="{{ url_for('face', id=id) }}"></td>
+		{% if loop.index is divisibleby 5 %}
+	    </tr><tr>
+		{% endif %}
+              {% endfor %}
+	    </tr>
+	  </table>
+    {% endif %}
+  </body>
+</html>
+

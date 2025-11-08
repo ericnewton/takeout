@@ -27,6 +27,7 @@ from typing import (
     Iterable,
     TypedDict,
     Required,
+    Any,
 )
 from pathlib import Path
 import typer
@@ -68,7 +69,6 @@ STOP_WORDS = {
     'the',
     'family',
     'before',
-    '2000',
     'over'
     'with',
     'google',
@@ -116,8 +116,15 @@ class ImageRecord(TypedDict, total=False):
     words: list[str]
     faces: FacesRecord
 
+IMAGE_RECORD_TABLE_COLUMNS: list[str] = list(ImageRecord.__mutable_keys__ - {"faces"})
+
 def date_from_filename(filename: str) -> Optional[datetime]:
     """Look for reasonable patterns in filenames and treat them as a datetime"""
+
+    # do not attempt to get a date from the takeout files
+    last = filename.split("/")[-1]
+    if last.endswith('.zip') and last.startswith('takeout-'):
+        return None
     for pattern in [YYYYMMDD_HHMMSS_RE, YYYYMMDD_RE, YYYY_MM_DD_RE, ISOLATED_YEAR_RE]:
         m = pattern.search(filename)
         if m:
@@ -142,13 +149,12 @@ def date_from_filename(filename: str) -> Optional[datetime]:
                     dd = 1
                     result = datetime(yyyy, mm, dd, 0, 0, 0)
             except ValueError as e:
-                logger.debug(f"Skipping bad datetime processing with {filename}: {e}")
+                logger.debug("Skipping bad datetime processing with %s: %s", filename, e)
 
             if result and datetime.now() > result > START_OF_TIME:
                 return result
 
     return None
-
 
 def words_of_filename(filename: str) -> Optional[list[str]]:
     """extract anything interesting from the album name"""
@@ -162,6 +168,7 @@ def words_of_filename(filename: str) -> Optional[list[str]]:
             for c in "()-.,'":
                 part = part.replace(c, " ")
             parts.update([w for w in part.split() if len(w) > 1])
+        parts = {p for p in parts if not p.isnumeric()}
         parts -= STOP_WORDS
         return sorted(list(parts))
     return None
@@ -179,7 +186,7 @@ def fetch_known_faces(db: duckdb.DuckDBPyConnection) -> list[FaceEncoding]:
 
 
 def add_file(
-    images: BatchInserter, metadata: BatchInserter, path: str, archive: str
+        path: str, archive: str, images: BatchInserter, metadata: BatchInserter
 ) -> None:
     # if Google can't decode it, don't even try
     if path.find("/Failed Videos/") >= 0:
@@ -213,6 +220,25 @@ def add_file(
     images.add_row(path, archive)
 
 
+def best_time(meta: dict[str, Any]) -> Optional[datetime]:
+    'pick the best time from "creationTime" and "photoTakenTime"'
+    times = []
+    for key in "photoTakenTime", "creationTime":
+        if key in meta:
+            ts = int(meta[key]["timestamp"])
+            dt = datetime.fromtimestamp(ts)
+            # Occasionally the time is just after the time epoch.
+            # Ignore it if it not "reasonable".
+            if dt > START_OF_TIME:
+                times.append(dt)
+    if len(times) == 1:
+        return times[0]
+    # return the latest
+    if len(times) > 1:
+        return sorted(times)[-1]
+    return None
+
+
 def process_metadata(ir: ImageRecord, meta_path: str, meta_archive: str) -> ImageRecord:
     """fetch metadata from the json file extracted by google from the given image file"""
 
@@ -223,8 +249,7 @@ def process_metadata(ir: ImageRecord, meta_path: str, meta_archive: str) -> Imag
     try:
         with tf.open() as fp:
             meta = json.load(fp)
-            ts = int(meta["photoTakenTime"]["timestamp"])
-            taken = datetime.fromtimestamp(ts)
+            taken = best_time(meta)
             lat = meta["geoData"]["latitude"]
             lon = meta["geoData"]["longitude"]
             if lat == 0.0 and lon == 0.0:
@@ -246,6 +271,17 @@ def is_small(coords: tuple[int, int, int, int]) -> bool:
         or abs(left - right) < IMAGE_SIZE_TOO_SMALL
     )
 
+def thumbnail(im: Image.Image) -> bytes:
+    try:
+        with io.BytesIO() as buf:
+            im.thumbnail(size=ITHUMBNAIL)
+            im = im.convert("RGB")  # remove any transparency
+            im.save(buf, format="jpeg")
+            buf.seek(io.SEEK_SET, 0)
+            return buf.read()
+    except Exception as e:
+        logger.exception("Error generating thumbnail for face: %s", e)
+    return b''
 
 def scan_faces(tf: TakeoutFile, all_faces: list[FaceEncoding]) -> FacesRecord:
     result = FacesRecord()
@@ -285,17 +321,7 @@ def scan_faces(tf: TakeoutFile, all_faces: list[FaceEncoding]) -> FacesRecord:
                 logger.info("Found a new face")
                 top, right, bottom, left = location
                 pil_image = Image.fromarray(image[top:bottom, left:right])
-                try:
-                    with io.BytesIO() as buf:
-                        pil_image.thumbnail(size=ITHUMBNAIL)
-                        pil_image = pil_image.convert("RGB")  # remove any transparency
-                        pil_image.save(buf, format="jpeg")
-                        buf.seek(io.SEEK_SET, 0)
-                        thumbnail = buf.read()
-                except Exception as e:
-                    logger.exception("Error generating thumbnail for face: %s", e)
-                    thumbnail = b""
-                result.add_new_face(encoding, thumbnail)
+                result.add_new_face(encoding, thumbnail(pil_image))
 
     return result
 
@@ -317,19 +343,11 @@ def process_image_file(
                 ImageOps.exif_transpose(im, in_place=True)
                 width, height = im.size
                 record.update(width=width, height=height)
-
-                # generate thumbnail
-                with io.BytesIO() as buf:
-                    im.thumbnail((120, 120))
-                    im = im.convert("RGB")  # remove any transparency
-                    im.save(buf, format="jpeg")
-                    buf.seek(io.SEEK_SET, 0)
-                    thumbnail = buf.read()
+                record.update(thumbnail=thumbnail(im))
         except Exception as ex:
             logger.exception("Unable to read image %s: %s", tf, ex)
             return record
 
-    record.update(thumbnail=thumbnail)
     if config.scan_faces:
         record.update(faces=scan_faces(tf, all_faces))
     taken = date_from_filename(filename) or date_from_filename(archive)
@@ -382,7 +400,7 @@ def process_video_file(filename: str, archive: str, config: Config) -> ImageReco
                     os.remove(gif)
                 return record
     except Exception as e:
-        logger.exception(f"Error processing video file {tf}: {e}")
+        logger.exception("Error processing video file %s: %s", tf, e)
 
 
 def process_file(paths: Tuple[str, str, str, str], config: Config, all_faces: list[FaceEncoding]) -> Optional[ImageRecord]:
@@ -509,9 +527,9 @@ class Loader:
         start = self.config.takeout_directory
         logger.info("Scanning files in %s", start)
 
-        with self.db.cursor() as cur:
-            images = BatchInserter(cur, "image_files", ["path", "archive"])
-            metadata = BatchInserter(cur, "meta_files", ["image_path", "meta_path", "archive"])
+        with self.db.cursor() as cur, \
+             BatchInserter(cur, "image_files", ["path", "archive"]) as images, \
+             BatchInserter(cur, "meta_files", ["image_path", "meta_path", "archive"]) as metadata:
 
             # walk the tree and find all images/video
             for dirpath, dir_names, filenames in os.walk(start, followlinks=True):
@@ -524,47 +542,46 @@ class Loader:
                     if filename.endswith(".zip"):
                         archive = path
                         for path in listing(archive):
-                            add_file(images, metadata, path, archive)
+                            add_file(path, archive, images, metadata)
                     else:
-                        add_file(images, metadata, path, "")
-
-            images.flush()
-            metadata.flush()
+                        add_file(path, "", images, metadata)
 
 
     def load_files(self) -> int:
-        with self.db.cursor() as cur:
-            all_faces = fetch_known_faces(cur)
-            next_id = max([f.id for f in all_faces], default=-1) + 1
+        
+        # We can't process database updates in the process pool
+        # because the database connection cannot be shared in
+        # worker processes. So prepare ImageRecords in parallel
+        # and bulk insert them in the main thread.
+        
+        with self.db.cursor() as cur, \
+             BatchInserter(cur, "images", IMAGE_RECORD_TABLE_COLUMNS, max=5) as images_inserter, \
+             BatchInserter(cur, "faces", ["id", "encoding", "image"]) as faces_inserter, \
+             BatchInserter(cur, "face_matches", ["path", "face_id"]) as matches_inserter, \
+             cf.ProcessPoolExecutor(max_workers=self.config.concurrency) as executor:
 
-            # We can't process database updates in the process pool
-            # because the database connection cannot be shared in
-            # worker processes. So prepare ImageRecords in parallel
-            # and bulk insert them in the main thread.
-
-            columns : list[str] = list(ImageRecord.__mutable_keys__ - {"faces"})
-            images_inserter = BatchInserter(cur, "images", columns)
-            faces_inserter = BatchInserter(cur, "faces", ["id", "encoding", "image"])
-            matches_inserter = BatchInserter(cur, "face_matches", ["path", "face_id"])
-
-            with cf.ProcessPoolExecutor(max_workers=self.config.concurrency) as executor:
-                total = count(cur, "SELECT count(*) from image_files")
-                processed = count(cur, """
-                   SELECT count(*)
-                     FROM image_files if LEFT JOIN images i ON if.path = i.path
-                    WHERE i.hash IS NOT NULL
-                """)
+                all_faces = fetch_known_faces(cur)
+                next_id = max([f.id for f in all_faces], default=-1) + 1
+                total, processed = cur.execute("""
+                    SELECT count(if.path), count(i.hash)
+                      FROM image_files if LEFT JOIN images i ON if.path = i.path
+                """).fetchone()
                 and_faces = " and faces" if self.config.scan_faces else ""
                 logger.info("Processing %d images for thumbnails%s", total - processed, and_faces)
+
+                # The following query loads all the outstanding image
+                # files into memory, which is not ideal.  However,
+                # long-running queries can cause deadlock when the
+                # duckdb WAL is commited as we write updates.  See
+                # https://github.com/duckdb/duckdb/issues/14303
                 
-                paths = fetch_many(
-                    cur,
+                paths = cur.execute(
                     """SELECT if.path, if.archive, m.meta_path, m.archive
                          FROM image_files if
                               LEFT JOIN meta_files m ON if.path = m.image_path
                               LEFT JOIN images i ON if.path = i.path
                         WHERE i.hash IS NULL
-                    """)
+                    """).fetchall()
                 for ir in track(
                         executor.map(
                             process_file,
@@ -585,9 +602,6 @@ class Loader:
                             all_faces.append(enc)
                             faces_inserter.add_row(enc.id, enc.encoding, thumbnail)
                             matches_inserter.add_row(ir["path"], enc.id)
-
-                for inserter in images_inserter, matches_inserter, faces_inserter:
-                    inserter.flush()
 
                 return total - processed
 

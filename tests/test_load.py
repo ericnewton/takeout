@@ -11,6 +11,8 @@ def test_date_from_filename():
         "Pictures from 2024-02-04/0203xyzzy": datetime.datetime(2024, 2, 4),
         "/Not a date 9876-01-01": None,
         "2024/01/02/myfile.jpg": datetime.datetime(2024, 1, 2),
+        "Takeout/Google Photos/Visit to Sarasota 2012-01-19/IMG_0163.JPG":
+        datetime.datetime(2012, 1, 19),
     }
     for k, v in date_values.items():
         dt = load.date_from_filename(k)

@@ -216,6 +216,49 @@ def response(data: bytes) -> flask.Response:
     return result
 
 
+@app.route("/viewer/<hash>", methods=GET)
+def viewer(hash: str) -> Union[flask.Response, str]:
+    with db.cursor() as cur:
+        row = cur.execute(
+            """SELECT path, archive, size, width, height, taken, words, lat, lon FROM images WHERE hash = ?""", [hash]
+        ).fetchone()
+        if row is None:
+            return ""
+        path, archive, size, width, height, taken, words, lat, lon = row
+        data = dict(hash=hash,
+                    path=path,
+                    archive=archive,
+                    size=size,
+                    width=width,
+                    height=height,
+                    taken=taken,
+                    words=words)
+        if lat and lon:
+            row = cur.execute(
+                """
+                INSTALL spatial;
+                LOAD spatial;
+                SELECT display_name,
+                       ST_Distance_Spheroid(ST_Point(lat, lon), ST_Point(?, ?)) distance
+                  FROM places
+                 WHERE distance < ?
+                 ORDER by distance ASC
+                 LIMIT 1
+            """, [lat, lon, 10 * 1000]
+            ).fetchone()
+            if row:
+                data["location"] = row[0]
+        rows = cur.execute(
+            """
+            SELECT face_id
+              FROM face_matches f JOIN images i on f.path = i.path
+             WHERE i.hash = ?
+             GROUP BY face_id
+            """, [hash]).fetchall()
+        if rows:
+            data["faces"] = [face_id for face_id, in rows]
+    return flask.render_template("viewer.html", data=data)
+
 @app.route("/image/<hash>", methods=GET)
 def image(hash: str) -> Union[flask.Response, str]:
     with db.cursor() as cur:

@@ -1,11 +1,14 @@
 import duckdb
 import pandas as pd
 from typing import Generator, Tuple, Iterable, Any
+import logging
+
+logger = logging.getLogger("db")
 
 def count(db, query, default=0):
-    row = db.execute(query).fetchone()
-    if row:
-        return row[0]
+    rows = db.execute(query).fetchall()
+    if rows:
+        return rows[0][0]
     return default
 
 def fetch_many(
@@ -24,7 +27,7 @@ def fetch_many(
                 yield row
 
 class BatchInserter:
-    def __init__(self, db: duckdb.DuckDBPyConnection, table: str, columns: list[str], max: int = 10):
+    def __init__(self, db: duckdb.DuckDBPyConnection, table: str, columns: list[str], max: int = 100):
         self.db = db
         self.table = table
         self.columns = columns
@@ -32,10 +35,20 @@ class BatchInserter:
         self.count = 0
         self.max = max
 
+    def __enter__(self) -> "BatchInserter":
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        self.close()
+        return False
+
+    def close(self) -> None:
+        self.flush()
+
     def flush(self) -> None:
-        if self.data:
+        if self.count > 0:
             col_str = ", ".join(self.columns)
-            df = pd.DataFrame(self.data)  # noqa: F841
+            df = pd.DataFrame.from_dict(self.data)  # noqa: F841
             stmt = f"""
                  INSERT OR IGNORE
                    INTO {self.table} ({col_str})

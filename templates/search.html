@@ -64,7 +64,7 @@
 		<img src="{{ url_for('face', id=id) }}">
 	      </label> 
 	    </td>
-	    {% if loop.index is divisibleby 8 %}
+	    {% if loop.index is divisibleby 5 %}
 	</tr><tr>
 	    {% endif %}
       {% endfor %}
@@ -78,7 +78,7 @@
       {% for year, hashes in results.years %}
       <li>{{ year }}</li>
         {% for hash in hashes %}
-         <a href="{{ url_for('image', hash=hash) }}"><img src="{{ url_for('thumb',hash=hash) }}"></a>
+         <a href="{{ url_for('viewer', hash=hash) }}"><img src="{{ url_for('thumb',hash=hash) }}"></a>
         {% endfor %}
       {% endfor %}
 	 

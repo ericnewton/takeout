@@ -13,15 +13,16 @@ warnings.filterwarnings("ignore", category=UserWarning, module="moviepy")
 
 logging_fixed: bool = False
 
+LOG_FORMAT = "%(asctime)s %(levelname)s: %(message)s"
+
 def fix_logging(log: Optional[Path] = None):
     "a no-op so we don't get warnings about an unused import when importing this module"
     global logging_fixed
     if logging_fixed:
         return
-    log_format = "%(asctime)s %(levelname)s: %(message)s"
     if log:
-        logging.basicConfig(format=log_format, level=logging.INFO, filename=log, filemode="a")
+        logging.basicConfig(format=LOG_FORMAT, level=logging.INFO, filename=log, filemode="a")
     else:
-        logging.basicConfig(format=log_format, level=logging.INFO)
+        logging.basicConfig(format=LOG_FORMAT, level=logging.INFO)
     logging_fixed = True
 
