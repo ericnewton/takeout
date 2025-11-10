@@ -1,4 +1,4 @@
-from takeout import load, config, db
+from takeout import load, config, db, io
 import duckdb
 import datetime
 
@@ -32,7 +32,7 @@ def test_extract_meta():
     image = "tests/2025-02-04 some.jpg"
     testfile = image + ".supplemental-metadata.json"
     ir = load.ImageRecord(path=image)
-    meta = load.process_metadata(ir, testfile, "")
+    meta = load.process_metadata(ir, io.InputFile(testfile, ""))
     expected = {
         "path": "tests/2025-02-04 some.jpg",
         "taken": datetime.datetime(2014, 10, 19, 9, 42, 39),

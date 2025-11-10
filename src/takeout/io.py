@@ -54,7 +54,7 @@ class FReader(Reader):
 class ZReader(Reader):
     "A Reader for an entry in a ZipFile"
 
-    def __init__(self, entry: "TakeoutFile"):
+    def __init__(self, entry: "InputFile"):
         self.zf = zipfile.ZipFile(entry.archive)
         self.df = self.zf.open(entry.path)
 
@@ -67,11 +67,11 @@ class ZReader(Reader):
 
 
 class TemporaryFile(str):
-    "Provide an open file reference from a TakeoutFile in a `with` clause"
+    "Provide an open file reference from a InputFile in a `with` clause"
 
     BUFSIZE = 1024 * 1024
 
-    def __init__(self, img: "TakeoutFile"):
+    def __init__(self, img: "InputFile"):
         self.op = tempfile.NamedTemporaryFile(suffix=img.suffix())
         self.img = img
 
@@ -93,7 +93,7 @@ class TemporaryFile(str):
         return False
 
 
-class TakeoutFile(object):
+class InputFile(object):
     "Track a filename, possibly inside an archive"
     UNKNOWN_TYPE = "application/octet"
 

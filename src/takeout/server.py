@@ -1,7 +1,7 @@
 from .fix_logging import fix_logging
 from .types import DatabaseFileType
-from .io import TakeoutFile
-from .db import fetch_many
+from .io import InputFile
+from . import sql
 import flask
 import duckdb
 import magic
@@ -74,16 +74,7 @@ def location_complete() -> Any:
     rows = None
     with db.cursor() as cur:
         try:
-            rows = cur.execute(
-                """
-              SELECT display_name
-                FROM places
-               WHERE display_name ILIKE CONCAT(?, '%')
-               ORDER BY population DESC
-               LIMIT ?
-                """,
-                [term, MAX_LOCATIONS],
-            ).fetchall()
+            rows = sql.LOCATION_COMPLETION_QUERY.fetchall(cur, [term, MAX_LOCATIONS])
         except duckdb.CatalogException as e:
             logger.error(f"Location read error: data probably not loaded {e}")
         except Exception:
@@ -99,23 +90,12 @@ def location_complete() -> Any:
 
 
 def faces(selected_faces: set[int] = set()):
+    "Fetch the faces that matched the most images"
     with db.cursor() as cur:
-        rows = cur.execute(
-            """
-        SELECT face_id, c
-          FROM (
-            SELECT face_id, count(*) c
-              FROM face_matches
-             GROUP BY face_id
-          )
-         ORDER BY c DESC
-         LIMIT 40
-            """
-        ).fetchall()
-        faces = {}
+        rows = sql.FACE_QUERY.fetchall(cur)
         if rows:
-            faces = {id: id in selected_faces for id, count in rows}
-        return faces
+            return {id: id in selected_faces for id, count in rows}
+        return {}
 
 
 @app.route("/search", methods=POST)
@@ -129,15 +109,7 @@ def search() -> str:
     binds = []
     cur = db.cursor()
     if distance > 0 and location != "":
-        rows = cur.execute(
-            """
-            SELECT name, lat, lon
-              FROM places
-             WHERE display_name = ? OR name = ?
-             ORDER BY population DESC LIMIT 1
-            """,
-            [location, location],
-        )
+        rows = sql.LOCATION_COMPLETION_QUERY.fetchall(cur, [location, location])
         location_data = rows.fetchone()
         if location_data:
             name, lat, lon = location_data
@@ -163,18 +135,20 @@ def search() -> str:
     if data["words"]:
         words = [w for w in data["words"].strip().split(" ") if len(w) > 1]
         ands += """
-           AND list_has_any(i.words, ?)
+           AND LIST_HAS_ANY(i.words, ?)
         """
         binds += [words]
 
+    # dedup search results by hash
     query = f"""
     INSTALL spatial;
     LOAD    spatial;        
     SELECT i.hash,
-           i.taken
+           ARBITRARY(i.taken) t
       FROM images i
      WHERE i.hash IS NOT null {ands}
-     ORDER BY taken DESC
+     GROUP BY i.hash
+     ORDER BY t DESC
      LIMIT ?
             """
     binds += [SearchResult.MAX + 1]
@@ -193,14 +167,7 @@ def search() -> str:
 @app.route("/thumb/<hash>", methods=GET)
 def thumb(hash: str) -> Union[flask.Response, str]:
     with db.cursor() as cur:
-        row = cur.execute(
-            """
-               SELECT thumbnail
-                 FROM images
-                WHERE hash = ?
-            """,
-            [hash],
-        ).fetchone()
+        row = sql.THUMBNAIL_QUERY.fetchone(cur, [hash])
         if row is None:
             return ""
         (img,) = row
@@ -219,14 +186,13 @@ def response(data: bytes) -> flask.Response:
 @app.route("/viewer/<hash>", methods=GET)
 def viewer(hash: str) -> Union[flask.Response, str]:
     with db.cursor() as cur:
-        row = cur.execute(
-            """SELECT path, archive, size, width, height, taken, words, lat, lon FROM images WHERE hash = ?""", [hash]
-        ).fetchone()
+        row = sql.IMAGE_DETAIL.fetchone(cur, [hash])
         if row is None:
             return ""
-        path, archive, size, width, height, taken, words, lat, lon = row
+        path, archive, mimetype, size, width, height, taken, words, lat, lon = row
         data = dict(hash=hash,
                     path=path,
+                    mimetype=mimetype,
                     archive=archive,
                     size=size,
                     width=width,
@@ -234,27 +200,10 @@ def viewer(hash: str) -> Union[flask.Response, str]:
                     taken=taken,
                     words=words)
         if lat and lon:
-            row = cur.execute(
-                """
-                INSTALL spatial;
-                LOAD spatial;
-                SELECT display_name,
-                       ST_Distance_Spheroid(ST_Point(lat, lon), ST_Point(?, ?)) distance
-                  FROM places
-                 WHERE distance < ?
-                 ORDER by distance ASC
-                 LIMIT 1
-            """, [lat, lon, 10 * 1000]
-            ).fetchone()
+            row = sql.NEAREST_LOCATION.fetchone(cur, [lat, lon, 10 * 1000])
             if row:
                 data["location"] = row[0]
-        rows = cur.execute(
-            """
-            SELECT face_id
-              FROM face_matches f JOIN images i on f.path = i.path
-             WHERE i.hash = ?
-             GROUP BY face_id
-            """, [hash]).fetchall()
+        rows = sql.FACES_FOR_IMAGE.fetchall(cur, [hash])
         if rows:
             data["faces"] = [face_id for face_id, in rows]
     return flask.render_template("viewer.html", data=data)
@@ -262,13 +211,11 @@ def viewer(hash: str) -> Union[flask.Response, str]:
 @app.route("/image/<hash>", methods=GET)
 def image(hash: str) -> Union[flask.Response, str]:
     with db.cursor() as cur:
-        row = cur.execute(
-            """SELECT path, archive FROM images WHERE hash = ?""", [hash]
-        ).fetchone()
+        row = sql.IMAGE_INPUT.fetchone(cur, [hash])
         if row is None:
             return ""
         (path, archive) = row
-    t = TakeoutFile(path, archive)
+    t = InputFile(path, archive)
     with t.open() as fp:
         return response(fp.read())
 
@@ -276,7 +223,7 @@ def image(hash: str) -> Union[flask.Response, str]:
 @app.route("/face/<id>", methods=GET)
 def face(id: str) -> Union[flask.Response, str]:
     with db.cursor() as cur:
-        row = cur.execute("SELECT image FROM faces WHERE id = ?", [int(id)]).fetchone()
+        row = sql.FETCH_FACE.fetchone(cur, [int(id)])
         if row is None:
             return ""
         (image,) = row
@@ -301,9 +248,9 @@ def run(
     logging.basicConfig(format=format, level=logging.INFO)
 
     db = duckdb.connect(database, read_only=True)
-        
-    q = "SELECT year(taken) y FROM images GROUP BY y ORDER BY y desc"
-    YEARS = [str(year) for year, in fetch_many(db, q)][1:-1]
+
+    all_year_strings = [str(year) for year, in sql.YEARS.fetchall(db)]
+    YEARS = all_year_strings[1:-1]
 
     app.run(bind, port, debug=debug)
 
@@ -313,4 +260,5 @@ def main():
 
 
 if __name__ == "__main__":
-    typer.run(run)
+    main()
+

@@ -55,7 +55,7 @@ $ uv pip install -e .
 * Load the files into an "images.db" duckdb database
 
 ```
-$ uv run load --takeout-directory /path/to/my/Takeout
+$ uv run load --load-directory /path/to/my/Takeout
 ```
 
 Loading all the images/video will take some time.  May last load took
