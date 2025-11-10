@@ -5,13 +5,13 @@ import logging
 
 logger = logging.getLogger("db")
 
-def count(db, query, default=0):
+def count(db, query, default=0) -> int:
     rows = db.execute(query).fetchall()
     if rows:
         return rows[0][0]
     return default
 
-def fetch_many(
+def fetchmany(
     db: duckdb.DuckDBPyConnection,
     query: str,
     bindings: Iterable[Any] = (),

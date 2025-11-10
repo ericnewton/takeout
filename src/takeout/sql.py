@@ -1,5 +1,5 @@
-from typing import Tuple, Any
-from .db import fetch_many, count
+from typing import Tuple, Any, Sequence, Union
+from . import db
 import duckdb
 
 def create_tables(cur: duckdb.DuckDBPyConnection) -> None:
@@ -18,7 +18,7 @@ def create_tables(cur: duckdb.DuckDBPyConnection) -> None:
                lon DOUBLE,
                words VARCHAR[],
                thumbnail BLOB
-        );
+        )
         """
     )
     # file loading and image processing are done in two steps:
@@ -45,7 +45,7 @@ def create_tables(cur: duckdb.DuckDBPyConnection) -> None:
                lon DOUBLE,
                words VARCHAR[],
                thumbnail BLOB
-        );
+        )
         """
     )
     cur.execute(
@@ -53,7 +53,7 @@ def create_tables(cur: duckdb.DuckDBPyConnection) -> None:
         CREATE TABLE IF NOT EXISTS image_files (
                path VARCHAR NOT NULL PRIMARY KEY,
                archive VARCHAR
-        );
+        )
         """
     )
     cur.execute(
@@ -62,7 +62,7 @@ def create_tables(cur: duckdb.DuckDBPyConnection) -> None:
                image_path VARCHAR NOT NULL PRIMARY KEY,
                meta_path VARCHAR NOT NULL,
                archive VARCHAR NOT NULL
-        );
+        )
         """
     )
     cur.execute(
@@ -71,7 +71,7 @@ def create_tables(cur: duckdb.DuckDBPyConnection) -> None:
                id INTEGER NOT NULL PRIMARY KEY,
                encoding DOUBLE[] NOT NULL,
                image BLOB
-        );
+        )
         """
     )
     cur.execute(
@@ -80,14 +80,14 @@ def create_tables(cur: duckdb.DuckDBPyConnection) -> None:
                path VARCHAR NOT NULL,
                face_id INTEGER NOT NULL,
         CONSTRAINT path_face_id UNIQUE (path, face_id)
-        );
+        )
         """
     )
 
-def create_location_tables(cur: duckdb.DuckDBPyConnection) -> None:
+def create_location_table(cur: duckdb.DuckDBPyConnection):
     cur.execute(
         """
-        CREATE TABLE places (
+        CREATE TABLE IF NOT EXISTS places (
                 name         VARCHAR NOT NULL,
                 display_name VARCHAR NOT NULL UNIQUE,
                 country_code VARCHAR,
@@ -95,9 +95,8 @@ def create_location_tables(cur: duckdb.DuckDBPyConnection) -> None:
                 lat          DOUBLE,
                 lon          DOUBLE,
                 population   INTEGER
-        );
+        )
         """)
-    
 
 class QueryException(Exception):
     pass
@@ -114,21 +113,21 @@ class Query:
             if not isinstance(value, atype):
                 raise QueryException(f"Value {value} for binding {name} (argument {i}) is not a {atype}")
 
-    def fetchone(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []):
+    def fetchone(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []) -> Tuple:
         self.check_bind(binds)
         return cur.execute(self.q, binds).fetchone()
 
-    def fetchall(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []):
+    def fetchall(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []) -> list[Tuple]:
         self.check_bind(binds)
         return cur.execute(self.q, binds).fetchall()
 
-    def fetchmany(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []):
+    def fetchmany(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []) -> Generator[Tuple, None, None]:
         self.check_bind(binds)
-        return fetch_many(cur, self.q, binds)
+        return db.fetchmany(cur, self.q, binds)
 
-    def count(self, cur: duckdb.DuckDBPyConnection, default=0):
+    def count(self, cur: duckdb.DuckDBPyConnection, default=0) -> int:
         self.check_bind([])
-        return count(cur, self.q, default)
+        return db.count(cur, self.q, default)
 
 WORK_LIST = Query(
     """SELECT if.path, if.archive, m.meta_path, m.archive
@@ -181,6 +180,15 @@ LOCATION_COMPLETION_QUERY = Query(
         [('prefix', str),
          ('limit', int)])
 
+LOCATION_LOOKUP_QUERY = Query(
+    """SELECT name, lat, lon
+         FROM places
+        WHERE name = ? or display_name = ?
+        LIMIT 1
+    """,
+    [('location', str),
+     ('location', str)])
+
 FACE_QUERY = Query(
     """SELECT face_id, c
         FROM (
@@ -223,7 +231,7 @@ NEAREST_LOCATION = Query(
     """, [
         ('lat', float),
         ('lon', float),
-        ('distance', float)
+        ('distance', Union[float, int])
     ])
 
 FACES_FOR_IMAGE = Query(

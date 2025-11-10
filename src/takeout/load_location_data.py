@@ -44,7 +44,7 @@ def load_zip_files(database: Path) -> None:
     logger.info("initializing database")
 
     db = duckdb.connect(database)
-    sql.create_location_tables(db)
+    sql.create_location_table(db)
 
     logger.info("reading files to download")
 
