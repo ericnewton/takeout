@@ -109,10 +109,9 @@ def search() -> str:
     binds = []
     cur = db.cursor()
     if distance > 0 and location != "":
-        rows = sql.LOCATION_COMPLETION_QUERY.fetchall(cur, [location, location])
-        location_data = rows.fetchone()
-        if location_data:
-            name, lat, lon = location_data
+        row = sql.LOCATION_COMPLETION_QUERY.fetchone(cur, [location, location])
+        if row:
+            name, lat, lon = row
             distance *= 1000  # distance km to m
             ands += """
                AND i.lat is not null

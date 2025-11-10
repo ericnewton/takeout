@@ -54,28 +54,29 @@ ITHUMBNAIL = (200, 200)
 VTHUMBNAIL = 200
 
 STOP_WORDS = {
-    "to",
-    "in",
-    "of",
-    "goes",
-    "trip",
-    "favorites",
-    "for",
-    "untitled",
-    "from",
+    "and",
     "folder",
-    "photos",
+    "for",
+    "from",
+    "goes",
+    "in",
+    "is",
+    "of",
     "photo",
+    "photos",
+    "to",
+    "trip",
+    "untitled",
+    'before',
+    'google',
     'image',
     'jpg',
-    'the',
-    'family',
-    'before',
+    'png',
     'over'
-    'with',
-    'google',
+    'the',
     'video',
     'videos',
+    'with',
 }
 
 
@@ -159,21 +160,23 @@ def date_from_filename(filename: str) -> Optional[datetime]:
 
     return None
 
+PUNTUATION = re.compile(r"[\ \(\)\-_\.,'!\"]")
 def words_of_filename(filename: str) -> Optional[list[str]]:
-    """extract anything interesting from the album name"""
-    # ignore if there are no spaces in the filename
+    """pull descriptive words from the filename"""
+    # descriptive text means "has a space in it"
     if filename.find(" "):
         filename = filename.lower()
-        space_parts = [part for part in filename.split("/") if part.find(' ') >= 0]
-        # remove punctuation
-        parts = set()
-        for part in space_parts:
-            for c in "()-.,'":
-                part = part.replace(c, " ")
-            parts.update([w for w in part.split() if len(w) > 1])
-        parts = {p for p in parts if not p.isnumeric()}
-        parts -= STOP_WORDS
-        return sorted(list(parts))
+
+        words = set()
+        for part in filename.split(os.path.sep):
+            if part.find(' ') < 0:
+                continue
+            for word in PUNTUATION.split(part):
+                if len(word) < 2 or word[0].isnumeric():
+                    continue
+                words.add(word)
+        words -= STOP_WORDS
+        return sorted(list(words))
     return None
 
 
@@ -400,9 +403,9 @@ def process_video_file(tf: InputFile, config: Config) -> ImageRecord:
                         record.update(thumbnail=fp.read())
                 finally:
                     os.remove(gif)
-                return record
     except Exception as e:
         logger.exception("Error processing video file %s: %s", tf, e)
+    return record
 
 
 def process_file(paths: Tuple[str, str, str, str], config: Config, all_faces: list[FaceEncoding]) -> Optional[ImageRecord]:

@@ -25,6 +25,9 @@ def test_words_of_filename():
 
     words = load.words_of_filename("/Decemberween-1999/trip to Tutankhamun tomb/trip to egypt.jpg")
     assert set(words) == {"tutankhamun", "tomb", "egypt"}
+
+    words = load.words_of_filename("/a/path/eric's fun_place/best photo.jpg")
+    assert set(words) == {"eric", "fun", "place", "best"}
     
 
 
