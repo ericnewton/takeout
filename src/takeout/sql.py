@@ -84,6 +84,21 @@ def create_tables(cur: duckdb.DuckDBPyConnection) -> None:
         """
     )
 
+def create_location_tables(cur: duckdb.DuckDBPyConnection) -> None:
+    cur.execute(
+        """
+        CREATE TABLE places (
+                name         VARCHAR NOT NULL,
+                display_name VARCHAR NOT NULL UNIQUE,
+                country_code VARCHAR,
+                type         VARCHAR NOT NULL,
+                lat          DOUBLE,
+                lon          DOUBLE,
+                population   INTEGER
+        );
+        """)
+    
+
 class QueryException(Exception):
     pass
 
@@ -182,7 +197,7 @@ LOCATION_QUERY = Query(
          FROM places
         WHERE display_name = ? OR name = ?
         ORDER BY population DESC LIMIT 1
-    """)
+    """, [('location', str), ('location', str)])
 
 THUMBNAIL_QUERY = Query(
     """SELECT thumbnail

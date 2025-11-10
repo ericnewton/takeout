@@ -1,5 +1,6 @@
 from takeout.fix_logging import fix_logging
 from takeout import db
+from takeout import sql
 import duckdb
 
 fix_logging()
@@ -20,6 +21,7 @@ def test_fetch_many():
     assert [] == list(
         db.fetch_many(conn, "SELECT id, name FROM test WHERE name = 'missing'")
     )
+    conn.close()
 
 def test_batch_insert():
     conn = duckdb.connect(":memory:")
@@ -37,4 +39,44 @@ def test_batch_insert():
         assert 3 == db.count(cur, COUNT_QUERY)
         bi.flush()
         assert 4 == db.count(cur, COUNT_QUERY)
+    conn.close()
 
+
+def test_schema():
+    conn = duckdb.connect(":memory:")
+    sql.create_tables(conn)
+    sql.create_location_tables(conn)
+
+    # try to run all the queries against an empty database
+    #
+    # This is a quick check agains the schema and the assigned bind
+    # types.
+    
+    values = dict(lat=40.774194,
+                  lon=-73.9697793,
+                  prefix="paris",
+                  limit=3,
+                  hash="0"*64,
+                  distance=10*1000.,
+                  id=0,
+                  location="Paris")
+    for name in dir(sql):
+        if name.isupper():
+            query = getattr(sql, name)
+            assert isinstance(query, sql.Query)
+            # counts should return zero
+            if name.endswith("_COUNT"):
+                assert 0 == query.count(conn, -1)
+            elif name == 'IMAGE_TOTAL_PROCESSED_COUNTS':
+                assert (0, 0) == query.fetchone(conn)
+            else:
+                # just bind to some example data and run the query
+                if not query.binds:
+                    assert [] == query.fetchall(conn)
+                else:
+                    binds = []
+                    for bname, _ in query.binds:
+                        binds.append(values[bname])
+                    assert [] == query.fetchall(conn, binds)
+            
+    conn.close()
