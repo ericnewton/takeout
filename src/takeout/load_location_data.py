@@ -11,6 +11,7 @@ import typer
 from pathlib import Path
 from .types import DatabaseFileType
 from .db import count
+from . import sql
 from zipfile import ZipFile
 
 fix_logging()
@@ -43,17 +44,7 @@ def load_zip_files(database: Path) -> None:
     logger.info("initializing database")
 
     db = duckdb.connect(database)
-    db.execute("""
-    CREATE OR REPLACE TABLE places (
-            name         VARCHAR NOT NULL,
-            display_name VARCHAR NOT NULL UNIQUE,
-            country_code VARCHAR,
-            type         VARCHAR NOT NULL,
-            lat          DOUBLE,
-            lon          DOUBLE,
-            population   INTEGER
-    )
-    """)
+    sql.create_location_table(db)
 
     logger.info("reading files to download")
 

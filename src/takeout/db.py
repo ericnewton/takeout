@@ -3,11 +3,9 @@ import pandas as pd
 from typing import Generator, Tuple, Iterable, Any
 import logging
 
-type database: duckdb.DuckDBPyConnection
-
 logger = logging.getLogger("db")
 
-def count(db, query, default=0):
+def count(db: duckdb.DuckDBPyConnection, query: str, default: int =0) -> int:
     """
     Perform a count query, returning the count, or the default if
     the query returns nothing
@@ -17,7 +15,7 @@ def count(db, query, default=0):
         return rows[0][0]
     return default
 
-def fetch_many(
+def fetchmany(
     db: duckdb.DuckDBPyConnection,
     query: str,
     bindings: Iterable[Any] = (),

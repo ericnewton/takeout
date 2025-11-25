@@ -109,9 +109,9 @@ def search() -> str:
     binds = []
     cur = db.cursor()
     if distance > 0 and location != "":
-        row = sql.LOCATION_COMPLETION_QUERY.fetchone(cur, [location, location])
-        if row:
-            name, lat, lon = row
+        rows = sql.LOCATION_LOOKUP_QUERY.fetchone(cur, [location, location])
+        if rows:
+            name, lat, lon = rows
             distance *= 1000  # distance km to m
             ands += """
                AND i.lat is not null
@@ -197,6 +197,8 @@ def viewer(hash: str) -> Union[flask.Response, str]:
                     width=width,
                     height=height,
                     taken=taken,
+                    lat=lat,
+                    lon=lon,
                     words=words)
         if lat and lon:
             row = sql.NEAREST_LOCATION.fetchone(cur, [lat, lon, 10 * 1000])

@@ -19,9 +19,17 @@
       {% endif %}
       <tr><td>Size</td><td>{{data["size"]}} bytes</td></tr>
       <tr><td>MIME type</td><td>{{data["mimetype"]}}</td></tr>
-      <tr><td>Width x Height</th><td>{{data["width"]}} x {{data["height"]}}</td></tr>
       <tr><td>Taken</td><td>{{data["taken"]}}</td></tr>
       <tr><td>Width x Height</th><td>{{data["width"]}} x {{data["height"]}}</td></tr>
+      {% if data["lat"] %}
+	<tr><td>Location</th>
+            <td>
+              <a href="https://maps.google.com/?q={{data["lat"]}},{{data["lon"]}}">
+		{{data["lat"]}}, {{data["lon"]}}
+              </a>
+            </td>
+        </tr>
+      {% endif %}
       {% if data["words"] %}
       <tr><td>Keywords</td><td>{{", ".join(data["words"])}}</td></tr>
       {% endif %}
