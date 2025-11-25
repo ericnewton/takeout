@@ -6,6 +6,7 @@ import magic
 import hashlib
 import logging
 import os.path
+from PIL.Image import IO
 from typing import Tuple, Generator
 
 logger = logging.getLogger(__name__)
@@ -18,8 +19,7 @@ def listing(archive: str) -> Generator[str, None, None]:
     except Exception:
         logger.exception("Unable to read archive %s", archive)
 
-
-class Reader(ABC):
+class Reader(ABC, IO[bytes]):
     "things that can be read and closed"
 
     @abstractmethod
