@@ -1,4 +1,4 @@
-from typing import Tuple, Any, Sequence, Union
+from typing import Optional, Any, Generator
 from . import db
 import duckdb
 import re
@@ -103,13 +103,13 @@ class QueryException(Exception):
     pass
 
 class Query:
-    def __init__(self, q: str, binds: list[Tuple[str, type]] = []):
+    def __init__(self, q: str, binds: list[tuple[str, type]] = []):
         self.q = q
         self.binds = binds[:]
         parts = re.findall('[?]', q)
         assert len(parts) == len(binds), \
             f"unmatched number of bind locations ({len(parts)}) " \
-            f"with bind description {[name for name, type in binds]}: " \
+            f"with bind description {[name for name, atype in binds]}: " \
             f"{self.q}"
 
     def check_bind(self, binds: list[Any]) -> None:
@@ -119,15 +119,15 @@ class Query:
             if not isinstance(value, atype):
                 raise QueryException(f"Value {value} for binding {name} (argument {i}) is not a {atype}")
 
-    def fetchone(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []) -> Tuple:
+    def fetchone(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []) -> Optional[tuple]:
         self.check_bind(binds)
         return cur.execute(self.q, binds).fetchone()
 
-    def fetchall(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []) -> list[Tuple]:
+    def fetchall(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []) -> list[tuple]:
         self.check_bind(binds)
         return cur.execute(self.q, binds).fetchall()
 
-    def fetchmany(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []) -> Generator[Tuple, None, None]:
+    def fetchmany(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []) -> Generator[tuple, None, None]:
         self.check_bind(binds)
         return db.fetchmany(cur, self.q, binds)
 
@@ -244,7 +244,7 @@ NEAREST_LOCATION = Query(
     """, [
         ('lat', float),
         ('lon', float),
-        ('distance', Union[float, int])
+        ('distance', float),
     ])
 
 FACES_FOR_IMAGE = Query(

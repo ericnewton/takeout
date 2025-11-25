@@ -5,13 +5,13 @@ import duckdb
 
 fix_logging()
 
-def test_fetch_many():
+def test_fetchmany():
     conn = duckdb.connect(":memory:")
     conn.execute("CREATE TABLE test (id INTEGER, name VARCHAR)")
     for i in range(1000):
         conn.execute("INSERT INTO test(id, name) VALUES(?, ?)", [i, str(i)])
     for mod in 2, 3:
-        rows = db.fetch_many(
+        rows = db.fetchmany(
             conn, "SELECT id, name FROM test WHERE id % ? = 0 ORDER BY id ASC", [mod]
         )
         for i, (id, name) in enumerate(rows):
@@ -19,7 +19,7 @@ def test_fetch_many():
             assert id == n
             assert name == str(n)
     assert [] == list(
-        db.fetch_many(conn, "SELECT id, name FROM test WHERE name = 'missing'")
+        db.fetchmany(conn, "SELECT id, name FROM test WHERE name = 'missing'")
     )
     conn.close()
 
@@ -45,7 +45,7 @@ def test_batch_insert():
 def test_schema():
     conn = duckdb.connect(":memory:")
     sql.create_tables(conn)
-    sql.create_location_tables(conn)
+    sql.create_location_table(conn)
 
     # try to run all the queries against an empty database
     #
