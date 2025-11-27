@@ -20,9 +20,7 @@ wheels/
 *.db
 
 # tmp
-q
 .python-version
-Takeout
 *.backup
 *.log
 *.wal

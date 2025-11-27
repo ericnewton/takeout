@@ -40,14 +40,15 @@ from rich.progress import track
 logger = logging.getLogger("load")
 
 YYYY = r"([12][901][0-9][0-9])"
-MM = r"([01][0-9])"
-DD = r"([0123][0-9])"
+MM = r"(0[1-9]|1[012])"
+DD = r"(0[1-9]|[12][0-9]|3[01])"
 YYYYMMDD = YYYY + MM + DD
 YYYYMMDD_RE = re.compile(YYYYMMDD)
 HHMMSS = r"([0-2][0-9])([0-6][0-9])([0-6][0-9])"
 YYYYMMDD_HHMMSS_RE = re.compile(f"{YYYYMMDD}_{HHMMSS}")
 YYYY_MM_DD_RE = re.compile(f"{YYYY}[-/]{MM}[-/]{DD}")
-ISOLATED_YEAR_RE = re.compile(r"[^0-9]" + YYYY + "[^0-9]")
+NOT_DIGITS = r"[^0-9]"
+ISOLATED_YEAR_RE = re.compile(NOT_DIGITS + YYYY + NOT_DIGITS)
 
 START_OF_TIME = datetime(1990, 1, 1, 0, 0, 0)
 IMAGE_SIZE_TOO_SMALL = 150
@@ -55,28 +56,29 @@ ITHUMBNAIL = (200, 200)
 VTHUMBNAIL = 200
 
 STOP_WORDS = {
-    "to",
-    "in",
-    "of",
-    "goes",
-    "trip",
-    "favorites",
-    "for",
-    "untitled",
-    "from",
+    "and",
     "folder",
-    "photos",
+    "for",
+    "from",
+    "goes",
+    "in",
+    "is",
+    "of",
     "photo",
+    "photos",
+    "to",
+    "trip",
+    "untitled",
+    'before',
+    'google',
     'image',
     'jpg',
-    'the',
-    'family',
-    'before',
+    'png',
     'over'
-    'with',
-    'google',
+    'the',
     'video',
     'videos',
+    'with',
 }
 
 
@@ -160,21 +162,23 @@ def date_from_filename(filename: str) -> Optional[datetime]:
 
     return None
 
+PUNTUATION = re.compile(r"[\ \(\)\-_\.,'!\"]")
 def words_of_filename(filename: str) -> Optional[list[str]]:
-    """extract anything interesting from the album name"""
-    # ignore if there are no spaces in the filename
+    """pull descriptive words from the filename"""
+    # descriptive text means "has a space in it"
     if filename.find(" "):
         filename = filename.lower()
-        space_parts = [part for part in filename.split("/") if part.find(' ') >= 0]
-        # remove punctuation
-        parts = set()
-        for part in space_parts:
-            for c in "()-.,'":
-                part = part.replace(c, " ")
-            parts.update([w for w in part.split() if len(w) > 1])
-        parts = {p for p in parts if not p.isnumeric()}
-        parts -= STOP_WORDS
-        return sorted(list(parts))
+
+        words = set()
+        for part in filename.split(os.path.sep):
+            if part.find(' ') < 0:
+                continue
+            for word in PUNTUATION.split(part):
+                if len(word) < 2 or word[0].isnumeric():
+                    continue
+                words.add(word)
+        words -= STOP_WORDS
+        return sorted(words)
     return None
 
 
@@ -197,8 +201,8 @@ def add_file(
         logger.warning("Skipping %s", path)
         return
 
-    tf = InputFile(path, archive)
-    mimetype = tf.mimetype()
+    input_file = InputFile(path, archive)
+    mimetype = input_file.mimetype()
 
     # skip unknown types
     if mimetype == InputFile.UNKNOWN_TYPE:
@@ -286,9 +290,9 @@ def thumbnail(im: Image.Image) -> bytes:
         logger.exception("Error generating thumbnail for face: %s", e)
     return b''
 
-def scan_faces(tf: InputFile, all_faces: list[FaceEncoding]) -> FacesRecord:
+def scan_faces(input_file: InputFile, all_faces: list[FaceEncoding]) -> FacesRecord:
     result = FacesRecord()
-    with tf.open() as fp:
+    with input_file.open() as fp:
         image = face_recognition.load_image_file(fp)
     locations: list[tuple[int, int, int, int]] = face_recognition.face_locations(image)
     if locations:
@@ -304,7 +308,7 @@ def scan_faces(tf: InputFile, all_faces: list[FaceEncoding]) -> FacesRecord:
         # sanity check: number of faces found equals the number of encodings
         if len(encodings) != len(locations):
             logger.info(
-                "Found %d encodings and %d in %s ", len(encodings), len(locations), tf
+                "Found %d encodings and %d in %s ", len(encodings), len(locations), input_file
             )
             return result
 
@@ -330,17 +334,17 @@ def scan_faces(tf: InputFile, all_faces: list[FaceEncoding]) -> FacesRecord:
 
 
 def process_image_file(
-        tf: InputFile, config: Config, all_faces: list[FaceEncoding]
+        input_file: InputFile, config: Config, all_faces: list[FaceEncoding]
 ) -> ImageRecord:
-    logger.info("Processing image file %s", tf)
+    logger.info("Processing image file %s", input_file)
 
-    record = ImageRecord(path=tf.path, archive=tf.archive)
-    digest, size = tf.hash_and_size()
     words : list[str] = []
+    record = ImageRecord(path=input_file.path, archive=input_file.archive)
+    digest, size = input_file.hash_and_size()
     record.update(hash=digest, size=size)
-    record.update(mimetype=tf.mimetype())
+    record.update(mimetype=input_file.mimetype())
 
-    with tf.open() as fp:
+    with input_file.open() as fp:
         try:
             with Image.open(fp) as im:
                 # rotate image to match orientation from the exif data
@@ -350,38 +354,42 @@ def process_image_file(
                 record.update(width=width, height=height)
                 record.update(thumbnail=thumbnail(im))
         except Exception as ex:
-            logger.exception("Unable to read image %s: %s", tf, ex)
+            logger.exception("Unable to read image %s: %s", input_file, ex)
             return record
 
     if config.scan_faces:
-        record.update(faces=scan_faces(tf, all_faces))
-    taken = date_from_filename(tf.path) or date_from_filename(tf.archive)
+        record.update(faces=scan_faces(input_file, all_faces))
+    taken = date_from_filename(input_file.path) or date_from_filename(input_file.archive)
     if taken:
         record.update(taken=taken)
+<<<<<<< HEAD
     words += words_of_filename(tf.path)
+=======
+    words = words_of_filename(input_file.path)
+>>>>>>> refs/remotes/origin/main
     if words:
         record.update(words=sorted(words))
     return record
 
 
-def process_video_file(tf: InputFile, config: Config) -> ImageRecord:
-    logger.info("Processing video file %s", tf)
+def process_video_file(input_file: InputFile, config: Config) -> ImageRecord:
+    logger.info("Processing video file %s", input_file)
 
-    record = ImageRecord(path=tf.path, archive=tf.archive)
+    record = ImageRecord(path=input_file.path, archive=input_file.archive)
 
-    digest, size = tf.hash_and_size()
+    digest, size = input_file.hash_and_size()
     record.update(hash=digest, size=size)
-    record.update(mimetype=tf.mimetype())
+    record.update(mimetype=input_file.mimetype())
 
-    taken = date_from_filename(tf.path)
+    taken = date_from_filename(input_file.path)
     if taken:
         record.update(taken=taken)
-    words = words_of_filename(tf.path)
+    words = words_of_filename(input_file.path)
     if words:
         record.update(words=words)
 
     try:
-        with tf.asfile() as simple_file:
+        with input_file.asfile() as simple_file:
             with moviepy.VideoFileClip(simple_file.filename()) as vc:
                 width, height = vc.size
                 record.update(width=width, height=height)
@@ -403,16 +411,16 @@ def process_video_file(tf: InputFile, config: Config) -> ImageRecord:
                         record.update(thumbnail=fp.read())
                 finally:
                     os.remove(gif)
-                return record
     except Exception as e:
-        logger.exception("Error processing video file %s: %s", tf, e)
+        logger.exception("Error processing video file %s: %s", input_file, e)
+    return record
 
 
 def process_file(paths: Tuple[str, str, str, str], config: Config, all_faces: list[FaceEncoding]) -> Optional[ImageRecord]:
     fix_logging(config.log)
     path, archive, meta_path, meta_archive = paths
-    tf = InputFile(path, archive)
-    mimetype = tf.mimetype()
+    input_file = InputFile(path, archive)
+    mimetype = input_file.mimetype()
 
     # unknown type, skip
     if mimetype == InputFile.UNKNOWN_TYPE:
@@ -422,10 +430,10 @@ def process_file(paths: Tuple[str, str, str, str], config: Config, all_faces: li
 
     ir : Optional[ImageRecord] = None
     if mimetype == "video":
-        ir = process_video_file(tf, config)
+        ir = process_video_file(input_file, config)
 
     elif mimetype == "image":
-        ir = process_image_file(tf, config, all_faces)
+        ir = process_image_file(input_file, config, all_faces)
 
     else:
         logger.error("Unknown mimetype %s for %s", mimetype, path)
@@ -476,9 +484,9 @@ class Loader:
     def load_files(self) -> int:
         
         # We can't process database updates in the process pool
-        # because the database connection cannot be shared in
-        # worker processes. So prepare ImageRecords in parallel
-        # and bulk insert them in the main thread.
+        # because the database connection cannot be shared in worker
+        # processes. So prepare ImageRecords in parallel and batch
+        # insert them in the main thread.
         
         with self.db.cursor() as cur, \
              BatchInserter(cur, "images", IMAGE_RECORD_TABLE_COLUMNS, max=5) as images_inserter, \
@@ -534,16 +542,16 @@ def start(
     # add support for HEIF image types
     register_heif_opener()
 
-    config = Config(load_directory, database, concurrency, not skip_faces, log=log)
+    config = Config(load_directory, database, concurrency, not skip_faces, log)
     fix_logging(config.log)
 
     loader = Loader(config)
 
-    now = time.time()
+    start = time.time()
     loader.create_tables()
     loader.scan_files()
     processed = loader.load_files()
-    seconds = time.time() - now
+    seconds = time.time() - start
 
     with loader.db.cursor() as cur:
         thumbnails = sql.THUMBNAIL_COUNT.count(cur)

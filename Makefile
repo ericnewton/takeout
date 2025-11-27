@@ -8,7 +8,8 @@ test:
 
 check:  sync
 	uv tool run ty check  --color=never $(wildcard src/*/*.py)
-	/bin/true uv tool run pyrefly check $(wildcard src/*/*.py)
+	true uvx mypy $(wildcard src/*/*.py)
+	true uvx pyrefly check $(wildcard src/*/*.py)
 	uv tool run ruff check --output-format pylint  $(wildcard src/*/*.py)
 
 format:

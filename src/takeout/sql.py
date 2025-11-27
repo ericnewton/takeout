@@ -1,6 +1,7 @@
-from typing import Tuple, Any, Sequence, Union
+from typing import Optional, Any, Generator
 from . import db
 import duckdb
+import re
 
 def create_tables(cur: duckdb.DuckDBPyConnection) -> None:
     cur.execute(
@@ -102,9 +103,14 @@ class QueryException(Exception):
     pass
 
 class Query:
-    def __init__(self, q: str, binds: list[Tuple[str, type]] = []):
+    def __init__(self, q: str, binds: list[tuple[str, type]] = []):
         self.q = q
         self.binds = binds[:]
+        parts = re.findall('[?]', q)
+        assert len(parts) == len(binds), \
+            f"unmatched number of bind locations ({len(parts)}) " \
+            f"with bind description {[name for name, atype in binds]}: " \
+            f"{self.q}"
 
     def check_bind(self, binds: list[Any]) -> None:
         if len(binds) != len(self.binds):
@@ -113,15 +119,15 @@ class Query:
             if not isinstance(value, atype):
                 raise QueryException(f"Value {value} for binding {name} (argument {i}) is not a {atype}")
 
-    def fetchone(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []) -> Tuple:
+    def fetchone(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []) -> Optional[tuple]:
         self.check_bind(binds)
         return cur.execute(self.q, binds).fetchone()
 
-    def fetchall(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []) -> list[Tuple]:
+    def fetchall(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []) -> list[tuple]:
         self.check_bind(binds)
         return cur.execute(self.q, binds).fetchall()
 
-    def fetchmany(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []) -> Generator[Tuple, None, None]:
+    def fetchmany(self, cur: duckdb.DuckDBPyConnection, binds: list[Any] = []) -> Generator[tuple, None, None]:
         self.check_bind(binds)
         return db.fetchmany(cur, self.q, binds)
 
@@ -134,25 +140,30 @@ WORK_LIST = Query(
          FROM image_files if
          LEFT JOIN meta_files m ON if.path = m.image_path
          LEFT JOIN images i ON if.path = i.path
-       WHERE i.hash IS NULL""")
+       WHERE i.hash IS NULL
+    """)
 
 THUMBNAIL_COUNT = Query(
-    "SELECT COUNT(*) FROM images WHERE thumbnail IS NOT NULL")
+    """SELECT COUNT(*)
+         FROM images
+        WHERE thumbnail IS NOT NULL
+    """)
 
 FACE_COUNT = Query("SELECT COUNT(*) FROM faces")
 
 FACE_MATCH_COUNT = Query("SELECT COUNT(*) FROM face_matches")
 
 IMAGES_WITH_FACES_COUNT = Query(
-    """
-    SELECT COUNT(*) FROM (
+    """SELECT COUNT(*) FROM (
            SELECT path FROM face_matches GROUP BY path
-    )""")
+       )
+    """)
 
 IMAGE_DUPLICATE_COUNT = Query(
     """SELECT COUNT(*) FROM (
           SELECT count(hash) c FROM images GROUP BY hash
-       ) WHERE c > 1
+       )
+       WHERE c > 1
     """)
 
 KNOWN_FACES = Query("SELECT id, encoding FROM faces")
@@ -163,22 +174,15 @@ IMAGE_TOTAL_PROCESSED_COUNTS = Query(
          LEFT JOIN images i ON if.path = i.path
     """)
 
-IMAGES_METADATA_INPUTS = Query(
-    """SELECT if.path, if.archive, m.meta_path, m.archive
-         FROM image_files if
-         LEFT JOIN meta_files m ON if.path = m.image_path
-         LEFT JOIN images i ON if.path = i.path
-        WHERE i.hash IS NULL
-    """)
-
 LOCATION_COMPLETION_QUERY = Query(
     """SELECT display_name
          FROM places
         WHERE display_name ILIKE CONCAT(?, '%')
         ORDER BY population DESC
-        LIMIT ?""",
-        [('prefix', str),
-         ('limit', int)])
+        LIMIT ?
+    """,
+    [('prefix', str),
+     ('limit', int)])
 
 LOCATION_LOOKUP_QUERY = Query(
     """SELECT name, lat, lon
@@ -214,10 +218,19 @@ THUMBNAIL_QUERY = Query(
     """, [('hash', str)])
 
 IMAGE_DETAIL = Query(    
-    """SELECT path, archive, mimetype, size, width, height, taken, words, lat, lon
+    """SELECT path,
+              archive,
+              mimetype,
+              size,
+              width,
+              height,
+              taken,
+              words,
+              lat,
+              lon
          FROM images
-        WHERE hash = ?""",
-        [("hash", str)])
+        WHERE hash = ?
+    """,[("hash", str)])
 
 NEAREST_LOCATION = Query(
     """INSTALL spatial;
@@ -231,7 +244,7 @@ NEAREST_LOCATION = Query(
     """, [
         ('lat', float),
         ('lon', float),
-        ('distance', Union[float, int])
+        ('distance', float),
     ])
 
 FACES_FOR_IMAGE = Query(
@@ -246,7 +259,12 @@ IMAGE_INPUT = Query(
     """, [('hash', str)])
 
 FETCH_FACE = Query(
-    "SELECT image FROM faces WHERE id = ?",
+    """SELECT image FROM faces WHERE id = ?""",
     [("id", int)])
 
-YEARS = Query("SELECT year(taken) y FROM images GROUP BY y ORDER BY y desc")
+YEARS = Query(
+    """SELECT year(taken) y
+         FROM images
+        GROUP BY y
+        ORDER BY y desc
+    """)

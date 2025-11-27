@@ -1,18 +1,19 @@
 from takeout import load, config, db, io
 import duckdb
-import datetime
+from datetime import datetime
 
 
 def test_date_from_filename():
     date_values = {
-        "999920250203_010203xyzzy": datetime.datetime(2025, 2, 3, 1, 2, 3),
-        "9999/20250203xyzzy": datetime.datetime(2025, 2, 3),
-        "Pictures from 2025/0203xyzzy": datetime.datetime(2025, 1, 1),
-        "Pictures from 2024-02-04/0203xyzzy": datetime.datetime(2024, 2, 4),
+        "999920250203_010203xyzzy": datetime(2025, 2, 3, 1, 2, 3),
+        "9999/20250203xyzzy": datetime(2025, 2, 3),
+        "Pictures from 2025/0203xyzzy": datetime(2025, 1, 1),
+        "Pictures from 2024-02-04/0203xyzzy": datetime(2024, 2, 4),
         "/Not a date 9876-01-01": None,
-        "2024/01/02/myfile.jpg": datetime.datetime(2024, 1, 2),
+        "2024/01/02/myfile.jpg": datetime(2024, 1, 2),
         "Takeout/Google Photos/Visit to Sarasota 2012-01-19/IMG_0163.JPG":
-        datetime.datetime(2012, 1, 19),
+        datetime(2012, 1, 19),
+        "/foo/bar/2005/image_001.jpg": datetime(2005, 1, 1),
     }
     for k, v in date_values.items():
         dt = load.date_from_filename(k)
@@ -25,8 +26,10 @@ def test_words_of_filename():
 
     words = load.words_of_filename("/Decemberween-1999/trip to Tutankhamun tomb/trip to egypt.jpg")
     assert set(words) == {"tutankhamun", "tomb", "egypt"}
-    
 
+    words = load.words_of_filename("/a/path/eric's fun_place/best photo.jpg")
+    assert set(words) == {"eric", "fun", "place", "best"}
+    
 
 def test_extract_meta():
     image = "tests/2025-02-04 some.jpg"
@@ -35,7 +38,7 @@ def test_extract_meta():
     meta = load.process_metadata(ir, io.InputFile(testfile, ""))
     expected = {
         "path": "tests/2025-02-04 some.jpg",
-        "taken": datetime.datetime(2014, 10, 19, 9, 42, 39),
+        "taken": datetime(2014, 10, 19, 9, 42, 39),
         "lat": 1.0,
         "lon": 2.0,
     }
