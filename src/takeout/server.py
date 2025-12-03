@@ -18,7 +18,7 @@ app = flask.Flask(__name__, template_folder=os.path.join(os.getcwd(), "templates
 db: duckdb.DuckDBPyConnection
 YEARS: list[str]
 
-logger = logging.getLogger("server")
+logger = logging.getLogger(__name__)
 
 
 GET = ["GET"]

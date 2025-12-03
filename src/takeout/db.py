@@ -3,7 +3,7 @@ import pandas as pd
 from typing import Generator, Tuple, Iterable, Any
 import logging
 
-logger = logging.getLogger("db")
+logger = logging.getLogger(__name__)
 
 def count(db: duckdb.DuckDBPyConnection, query: str, default: int =0) -> int:
     """

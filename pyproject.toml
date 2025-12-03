@@ -20,6 +20,7 @@ dependencies = [
     "setuptools<81",
     "typer>=0.20.0",
     "types-pycurl>=7.45.7.20250926",
+    "ultralytics>=8.3.231",
 ]
 [project.scripts]
 load = "takeout:load.main"

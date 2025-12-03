@@ -36,7 +36,7 @@ import typer
 from rich.progress import track
 
 
-logger = logging.getLogger("load")
+logger = logging.getLogger(__name__)
 
 YYYY = r"([12][901][0-9][0-9])"
 MM = r"(0[1-9]|1[012])"

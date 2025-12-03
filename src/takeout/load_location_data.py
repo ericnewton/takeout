@@ -16,7 +16,7 @@ from zipfile import ZipFile
 
 fix_logging()
 
-logger = logging.getLogger("load_location_data")
+logger = logging.getLogger(__name__)
 
 # do not overload this source of location data
 URL = "https://www.geoapify.com/data-share/localities"
