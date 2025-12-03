@@ -5,6 +5,7 @@ from .config import Config
 from .types import TakeoutDirectoryType, DatabaseFileType
 from .db import BatchInserter
 from . import sql
+from .classifier import classify
 
 import concurrent.futures as cf
 import duckdb
@@ -337,6 +338,7 @@ def process_image_file(
 ) -> ImageRecord:
     logger.info("Processing image file %s", input_file)
 
+    words : list[str] = []
     record = ImageRecord(path=input_file.path, archive=input_file.archive)
     digest, size = input_file.hash_and_size()
     record.update(hash=digest, size=size)
@@ -348,6 +350,7 @@ def process_image_file(
                 # rotate image to match orientation from the exif data
                 ImageOps.exif_transpose(im, in_place=True)
                 width, height = im.size
+                words += classify(im)
                 record.update(width=width, height=height)
                 record.update(thumbnail=thumbnail(im))
         except Exception as ex:
@@ -359,9 +362,13 @@ def process_image_file(
     taken = date_from_filename(input_file.path) or date_from_filename(input_file.archive)
     if taken:
         record.update(taken=taken)
+<<<<<<< HEAD
+    words += words_of_filename(tf.path)
+=======
     words = words_of_filename(input_file.path)
+>>>>>>> refs/remotes/origin/main
     if words:
-        record.update(words=words)
+        record.update(words=sorted(words))
     return record
 
 
