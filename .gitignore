@@ -26,4 +26,4 @@ wheels/
 *.wal
 
 # cached image models
-yolin11*.pt
+yolo11*.pt
