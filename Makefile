@@ -6,10 +6,12 @@ install:
 test:
 	uv run pytest
 
+COMMENT=true
+
 check:  sync
 	uv tool run ty check  --color=never $(wildcard src/*/*.py)
-	true uvx mypy $(wildcard src/*/*.py)
-	true uvx pyrefly check $(wildcard src/*/*.py)
+	$(COMMENT) uvx mypy $(wildcard src/*/*.py)
+	$(COMMENT) uvx pyrefly check $(wildcard src/*/*.py)
 	uv tool run ruff check --output-format pylint  $(wildcard src/*/*.py)
 
 format:

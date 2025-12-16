@@ -1,6 +1,5 @@
 from ultralytics import YOLO
 import numpy as np
-import cv2
 MODEL = YOLO('yolo11n-cls.pt', verbose=False)
 THRESHOLD = 0.5
 

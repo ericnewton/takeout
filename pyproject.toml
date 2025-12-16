@@ -22,6 +22,7 @@ dependencies = [
     "types-pycurl>=7.45.7.20250926",
     "ultralytics>=8.3.231",
 ]
+
 [project.scripts]
 load = "takeout:load.main"
 server = "takeout:server.main"
@@ -33,6 +34,7 @@ dev = [
     "pandas-stubs>=2.3.2.250926",
     "pytest>=8.4.2",
 ]
+
 [tool.pytest.ini_options]
 testpaths = ['tests']
 pythonpath = "src"
@@ -47,6 +49,7 @@ moviepy = { git = "https://github.com/Zulko/moviepy.git" }
 
 [tool.uv]
 cache-dir = "./.uv_cache"
+package = true
 
 [tool.ruff]
 line-length = 100

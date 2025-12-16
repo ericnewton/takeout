@@ -46,7 +46,8 @@ For example, I am able to fetch my latest takeout with this command
 $ rclone -v copy gdrive:Takeout .
 ```
 
-* Pip install the software
+* This project is maintained with the excellent `uv` utility. Use it
+  to pip install the software
 
 ```
 $ uv pip install -e .
@@ -58,8 +59,8 @@ $ uv pip install -e .
 $ uv run load --load-directory /path/to/my/Takeout
 ```
 
-Loading all the images/video will take some time.  May last load took
-the better part of a day with an 8 core Ryzen 7 5700U mini pc.  Face
+Loading all the images/video will take some time. My last load took
+the better part of a day with an 8 core Ryzen 7 5700U mini pc. Face
 location and comparisons are CPU intensive.
 
 Loading is incremental and fairly resilient to errors.  You can run it
@@ -116,4 +117,6 @@ uploaded to Photos.  I need to add:
 * Display image metadata, location information with the image
 * Support quick next/prev image from query
 * Support "next page" at the end of a query
+* Find related photos by time, location, feature and person
 * Strip large border around scanned images
+* Separate multiple images from scans

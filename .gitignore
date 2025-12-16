@@ -24,3 +24,6 @@ wheels/
 *.backup
 *.log
 *.wal
+
+# cached image models
+yolin11*.pt

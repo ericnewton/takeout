@@ -163,7 +163,7 @@ def date_from_filename(filename: str) -> Optional[datetime]:
     return None
 
 PUNTUATION = re.compile(r"[\ \(\)\-_\.,'!\"]")
-def words_of_filename(filename: str) -> Optional[list[str]]:
+def words_of_filename(filename: str) -> list[str]:
     """pull descriptive words from the filename"""
     # descriptive text means "has a space in it"
     if filename.find(" "):
@@ -179,7 +179,7 @@ def words_of_filename(filename: str) -> Optional[list[str]]:
                 words.add(word)
         words -= STOP_WORDS
         return sorted(words)
-    return None
+    return []
 
 
 def commas(seq: Iterable[str]):
@@ -362,11 +362,7 @@ def process_image_file(
     taken = date_from_filename(input_file.path) or date_from_filename(input_file.archive)
     if taken:
         record.update(taken=taken)
-<<<<<<< HEAD
-    words += words_of_filename(tf.path)
-=======
-    words = words_of_filename(input_file.path)
->>>>>>> refs/remotes/origin/main
+    words += words_of_filename(input_file.path)
     if words:
         record.update(words=sorted(words))
     return record
