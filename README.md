@@ -18,11 +18,8 @@ Wait.  This can take **days.**
 
 If you choose "Send download link via email" you will need to manually
 download all the zip files. I **highly** recommend you choose the
-largest zip size (4G) to reduce the number of files you need to
+largest zip size (50G) to reduce the number of files you need to
 download.
-
-My last takeout of 45,000 images and videos required downloading 71 4G
-zip files. This is not fun.
 
 I pay for extra cloud storage in Google Drive. I direct the takeout
 request to "Add to Drive" which will place the .zip files in Google
@@ -114,7 +111,6 @@ uploaded to Photos.  I need to add:
 
 ### TODO
 
-* Display image metadata, location information with the image
 * Support quick next/prev image from query
 * Support "next page" at the end of a query
 * Find related photos by time, location, feature and person
