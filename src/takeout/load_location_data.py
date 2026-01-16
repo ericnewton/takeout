@@ -3,6 +3,7 @@ import duckdb
 import os
 import shutil
 import io
+import json
 import pycurl
 import logging
 import tempfile
@@ -10,13 +11,14 @@ import time
 import typer
 from pathlib import Path
 from .types import DatabaseFileType
-from .db import count
+from .db import count, BatchInserter
 from . import sql
 from zipfile import ZipFile
 
 fix_logging()
 
 logger = logging.getLogger(__name__)
+EMPTY = {}
 
 # do not overload this source of location data
 URL = "https://www.geoapify.com/data-share/localities"
@@ -70,8 +72,12 @@ def load_zip_files(database: Path) -> None:
                 zips.append(zip)
     logger.info(f"Found zips: {repr(zips)[:80]}...")
 
-    with tempfile.TemporaryDirectory() as tempdir:
-        tmp = os.path.join(tempdir, "tmp.ndjson")
+    COLS = [
+        'name', 'display_name', 'country_code', 'type',
+        'lat', 'lon', 'population'
+    ]
+    with tempfile.TemporaryDirectory() as tempdir, \
+         BatchInserter(db, "places", COLS, 1000) as places:
         for zip in zips:
             # be kind to our data source: take a little break between files
             time.sleep(0.25)
@@ -94,38 +100,36 @@ def load_zip_files(database: Path) -> None:
                     if name.endswith(".ndjson"):
                         country_code = name.split("/")[0]
                         logger.info(f"loading {name}")
-                        # copy out the data into a temp file for loading by duckdb
-                        with open(tmp, "wb") as output, zf.open(name, "r") as input:
-                            shutil.copyfileobj(input, output)
-                        db.execute(f"""
-                        INSERT OR REPLACE INTO places(name,
-                                           display_name,
-                                           country_code,
-                                           type,
-                                           lat,
-                                           lon,
-                                           population)
-                        SELECT COALESCE(other_names['name:en'], name), -- prefer english name
-                               -- prefix with english name, if available
-                               CONCAT(COALESCE(other_names['name:en'], name), '; ', display_name),
-                               '{country_code}',
-                               type,
-                               location[2],
-                               location[1],
-                               population 
-                        FROM read_json('{tmp}',
-                                       ignore_errors=true,
-                                       format=newline_delimited,
-                                       columns={{
-                                          name:'VARCHAR',
-                                          other_names:'MAP(VARCHAR, VARCHAR)',
-                                          display_name:'VARCHAR',
-                                          type:'VARCHAR',
-                                          location:'DOUBLE[]',
-                                          population:'INTEGER'}})
-                        WHERE name IS NOT NULL
-                        AND population IS NOT NULL 
-                        """)
+                        with zf.open(name) as fp:
+                            for line in fp:
+                                obj = json.loads(line)
+                                population = obj.get("population", None)
+                                if population is None:
+                                    continue
+                                display_name = obj["display_name"]
+                                type_ = obj["type"]
+                                location = obj["location"]
+                                lat = location[1]
+                                lon = location[0]
+                                
+                                # name should be the first display name
+                                first = display_name.split(", ", 1)[0]
+                                
+                                # but prefer the english name, if available
+                                other_names = obj.get('other_names', EMPTY)
+                                name = other_names.get("name:en", first)
+                                
+                                # jam the chosen name onto the display name
+                                display_name = name + "; " + display_name,
+                                
+                                places.add_row(name,
+                                               display_name,
+                                               country_code,
+                                               type_,
+                                               lat,
+                                               lon,
+                                               population)
+
     seconds = time.time() - now
     place_count = count(db, "SELECT COUNT(*) FROM places")
     logger.info(f"Loaded {place_count} locations in {seconds} seconds")
