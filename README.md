@@ -111,8 +111,9 @@ uploaded to Photos.  I need to add:
 
 ### TODO
 
-* Support quick next/prev image from query
-* Support "next page" at the end of a query
+* Quick next/prev image from query
+* "next page" at the end of a query
 * Find related photos by time, location, feature and person
 * Strip large border around scanned images
 * Separate multiple images from scans
+* port to SQLite, postgres
