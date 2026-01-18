@@ -6,6 +6,7 @@ import magic
 import hashlib
 import logging
 import os.path
+from io import UnsupportedOperation
 from PIL.Image import IO
 from typing import Tuple, Generator
 
@@ -29,6 +30,9 @@ class Reader(ABC, IO[bytes]):
     @abstractmethod
     def close(self) -> None:
         raise NotImplementedError()
+
+    def seek(self, offset, how=0):
+        raise UnsupportedOperation()
 
     def __enter__(self):
         return self

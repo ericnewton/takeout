@@ -514,7 +514,7 @@ class Loader:
                         completed=processed,
                         total=total):
                     if ir:
-                        images_inserter.add_dict(ir)
+                        images_inserter.add_dict(cast(dict[str, Any], ir))
                         faces : FacesRecord = ir.get("faces", NO_FACES)
                         for face in faces.matches:
                             matches_inserter.add_row(ir["path"], face.id)

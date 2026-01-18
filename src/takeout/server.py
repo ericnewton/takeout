@@ -2,27 +2,25 @@ from .fix_logging import fix_logging
 from .types import DatabaseFileType
 from .io import InputFile
 from . import sql
-import flask
+from fastapi import FastAPI, Request, Form
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse, FileResponse, Response
 import duckdb
 import magic
 import logging
-import os
 import typer
-from typing import Union, Any
+from typing import Union, Any, Annotated, Optional
 from pathlib import Path
 
 fix_logging()
 
 
-app = flask.Flask(__name__, template_folder=os.path.join(os.getcwd(), "templates"))
+app = FastAPI()
+templates = Jinja2Templates(directory="templates")
 db: duckdb.DuckDBPyConnection
 YEARS: list[str]
 
 logger = logging.getLogger(__name__)
-
-
-GET = ["GET"]
-POST = ["POST"]
 
 
 class SearchResult:
@@ -58,17 +56,19 @@ class SearchResult:
         self.count = count
 
 
-@app.route("/", methods=GET)
-def index() -> str:
-    return flask.render_template(
-        "search.html", data={}, results=SearchResult(None), faces=faces(), years=YEARS
-    )
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request):
+    return templates.TemplateResponse("search.html",
+                                      dict(request=request,
+                                           data={},
+                                           results=SearchResult(None),
+                                           faces=common_faces(),
+                                           years=YEARS))
 
 
-@app.route("/location_complete", methods=GET)
-def location_complete() -> Any:
+@app.get("/location_complete")
+def location_complete(term: str) -> Any:
     MAX_LOCATIONS = 40
-    term = flask.request.args.get("term", "")
     if not term:
         return []
     rows = None
@@ -89,7 +89,7 @@ def location_complete() -> Any:
     return [r for (r,) in rows]
 
 
-def faces(selected_faces: set[int] = set()):
+def common_faces(selected_faces: set[int] = set()) -> dict[int, bool]:
     "Fetch the faces that matched the most images"
     with db.cursor() as cur:
         rows = sql.FACE_QUERY.fetchall(cur)
@@ -98,27 +98,31 @@ def faces(selected_faces: set[int] = set()):
         return {}
 
 
-@app.route("/search", methods=POST)
-def search() -> str:
-    data = flask.request.form
-    distance = int(data["distance"])
-    location = data["location"].strip()
-    selected_faces = set(map(int, data.getlist("faces")))
+@app.post("/search", response_class=HTMLResponse)
+async def search(request: Request,
+           distance: Annotated[Optional[float], Form()] = None,
+           location: Annotated[str, Form()] = '',
+           faces: Annotated[list[int], Form()] = [],
+           words: Annotated[str, Form()] = '',
+           before: Annotated[Optional[int], Form()] = None,
+           ):
+    location = location.strip()
+    selected_faces = set(faces)
     results = SearchResult(None)
     ands = ""
     binds = []
     cur = db.cursor()
-    if distance > 0 and location != "":
+    if distance not in [None, ""] and distance > 0:
         rows = sql.LOCATION_LOOKUP_QUERY.fetchone(cur, [location, location])
         if rows:
             name, lat, lon = rows
-            distance *= 1000  # distance km to m
+            distance_m = 1000. * distance  # convert km to m
             ands += """
                AND i.lat is not null
                AND ST_Distance_Spheroid(ST_Point(i.lat, i.lon),
                                         ST_Point(?, ?)) < ?
             """
-            binds += [lat, lon, distance]
+            binds += [lat, lon, distance_m]
     if selected_faces:
         ands += """
                AND i.path IN (
@@ -126,17 +130,17 @@ def search() -> str:
                )
         """
         binds += [list(selected_faces)]
-    if data["before"]:
-        year = int(data["before"])
+    if before:
+        year = before
         ands += f"""
                AND i.taken < date '{year}-01-01'
         """
-    if data["words"]:
-        words = [w for w in data["words"].strip().split(" ") if len(w) > 1]
+    if words:
+        word_list = [w for w in words.strip().split(" ") if len(w) > 1]
         ands += """
            AND LIST_HAS_ANY(i.words, ?)
         """
-        binds += [words]
+        binds += [word_list]
 
     # dedup search results by hash
     query = f"""
@@ -154,36 +158,39 @@ def search() -> str:
     logger.info(f"query = {query}, binds = {binds}")
     rows = cur.execute(query, binds)
     results = SearchResult(rows)
-    return flask.render_template(
+    return templates.TemplateResponse(
         "search.html",
-        data=data,
-        results=results,
-        faces=faces(selected_faces),
-        years=YEARS,
-    )
+        dict(
+            request=request,
+            data=dict(distance=distance,
+                      location=location,
+                      faces=faces,
+                      words=words,
+                      before=str(before)),
+            results=results,
+            faces=common_faces(selected_faces),
+            years=YEARS,
+        ))
 
 
-@app.route("/thumb/<hash>", methods=GET)
-def thumb(hash: str) -> Union[flask.Response, str]:
+@app.get("/thumb/{hash}")
+def thumb(hash: str):
     with db.cursor() as cur:
         row = sql.THUMBNAIL_QUERY.fetchone(cur, [hash])
         if row is None:
             return ""
         (img,) = row
-        response = flask.make_response(img)
-        response.headers.set("Content-Type", "image/jpeg")
-        return response
+        return Response(content=img, headers={"Content-Type": "image/jpeg"})
 
 
-def response(data: bytes) -> flask.Response:
-    result = flask.make_response(data)
-    result.headers.set("Content-Type", magic.from_buffer(data, mime=True))
-    result.cache_control.max_age = 60 * 60 * 24
-    return result
+def response(data: bytes) -> Response:
+    # TODO: cache control
+    return Response(content=data,
+                    headers={"Content-Type": magic.from_buffer(data, mime=True)})
 
 
-@app.route("/viewer/<hash>", methods=GET)
-def viewer(hash: str) -> Union[flask.Response, str]:
+@app.get("/viewer/{hash}", response_class=HTMLResponse)
+def viewer(request: Request, hash: str):
     with db.cursor() as cur:
         row = sql.IMAGE_DETAIL.fetchone(cur, [hash])
         if row is None:
@@ -201,16 +208,18 @@ def viewer(hash: str) -> Union[flask.Response, str]:
                     lon=lon,
                     words=words)
         if lat and lon:
-            row = sql.NEAREST_LOCATION.fetchone(cur, [lat, lon, 10 * 1000])
+            row = sql.NEAREST_LOCATION.fetchone(cur, [lat, lon, 10 * 1000.])
             if row:
                 data["location"] = row[0]
         rows = sql.FACES_FOR_IMAGE.fetchall(cur, [hash])
         if rows:
             data["faces"] = [face_id for face_id, in rows]
-    return flask.render_template("viewer.html", data=data)
+    return templates.TemplateResponse("viewer.html",
+                                      dict(request=request,
+                                           data=data))
 
-@app.route("/image/<hash>", methods=GET)
-def image(hash: str) -> Union[flask.Response, str]:
+@app.get("/image/{hash}", response_class=Response)
+def image(hash: str):
     with db.cursor() as cur:
         row = sql.IMAGE_INPUT.fetchone(cur, [hash])
         if row is None:
@@ -221,8 +230,8 @@ def image(hash: str) -> Union[flask.Response, str]:
         return response(fp.read())
 
 
-@app.route("/face/<id>", methods=GET)
-def face(id: str) -> Union[flask.Response, str]:
+@app.get("/face/{id}", response_class=Response)
+def face(id: str):
     with db.cursor() as cur:
         row = sql.FETCH_FACE.fetchone(cur, [int(id)])
         if row is None:
@@ -231,14 +240,13 @@ def face(id: str) -> Union[flask.Response, str]:
     return response(image)
 
 
-@app.route("/favicon.ico")
-def favicon() -> flask.Response:
-    return flask.send_from_directory("static", "favicon.png", mimetype="image/png")
+@app.get("/favicon.ico", include_in_schema=False, response_class=FileResponse)
+def favicon():
+    return FileResponse("static/favicon.png")
 
 
 def run(
     port: int = 8080,
-    debug: bool = False,
     bind: str = "127.0.0.1",
     database: DatabaseFileType = Path("images.db"),
 ) -> None:
@@ -253,7 +261,8 @@ def run(
     all_year_strings = [str(year) for year, in sql.YEARS.fetchall(db)]
     YEARS = all_year_strings[1:-1]
 
-    app.run(bind, port, debug=debug)
+    import uvicorn
+    uvicorn.run(app, host=bind, port=port)
 
 
 def main():

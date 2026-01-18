@@ -1,7 +1,6 @@
 from .fix_logging import fix_logging
 import duckdb
 import os
-import shutil
 import io
 import json
 import pycurl
