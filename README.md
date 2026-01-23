@@ -111,6 +111,7 @@ uploaded to Photos.  I need to add:
 
 ### TODO
 
+* Incorporate "description" metadata into keywords
 * Quick next/prev image from query
 * "next page" at the end of a query
 * Find related photos by time, location, feature and person
