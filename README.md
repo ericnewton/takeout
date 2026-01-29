@@ -111,10 +111,15 @@ uploaded to Photos.  I need to add:
 
 ### TODO
 
-* Incorporate "description" metadata into keywords
+viewer
+
 * Quick next/prev image from query
 * "next page" at the end of a query
 * Find related photos by time, location, feature and person
+
+loader
+
+* Incorporate "description" metadata into keywords
 * Strip large border around scanned images
 * Separate multiple images from scans
 * port to SQLite, postgres

@@ -9,3 +9,4 @@ TakeoutDirectoryType = Annotated[
     ),
 ]
 DatabaseFileType = Annotated[Path, typer.Option(dir_okay=False, file_okay=True)]
+type ListOrSet[T] = list[T] | set[T]

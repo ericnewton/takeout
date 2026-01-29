@@ -9,7 +9,7 @@ def classify(img: np.ndarray) -> list[str]:
     for classification in results:
         for summary in classification.summary():
             if summary['confidence'] > THRESHOLD:
-                name = summary['name']
+                name = summary['name'].tolower()
                 result.append(name)
                 if '_' in name:
                     result += name.split('_')

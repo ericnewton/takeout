@@ -201,7 +201,7 @@ FACE_QUERY = Query(
            GROUP BY face_id
         )
        ORDER BY c DESC
-       LIMIT 40
+       LIMIT 50
     """)
 
 LOCATION_QUERY = Query(
