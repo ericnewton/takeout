@@ -119,8 +119,8 @@ def load_zip_files(database: Path) -> None:
                                 name = other_names.get("name:en", first)
                                 
                                 # jam the chosen name onto the display name
-                                display_name = name + "; " + display_name,
-                                
+                                display_name = name + "; " + display_name
+
                                 places.add_row(name,
                                                display_name,
                                                country_code,
